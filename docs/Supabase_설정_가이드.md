@@ -86,6 +86,28 @@ Supabase 웹사이트(https://supabase.com/dashboard)에서 **삼일한끼 프�
   (콘솔의 **매일 자동 매칭** 체크를 끄면 서버도 매칭을 건너뜁니다)
 - 운영자 콘솔이 열려 있을 때도 같은 기준으로 확인하고, 이미 실행된 회차는 다시 돌리지 않아요.
 
+## 7단계. 확인 코드 이메일 발송 (Gmail)
+
+신청을 마치면 `samilhankki@gmail.com`이 신청자에게 "결과 확인 코드" 메일을 보내요. (화면에도 코드는 그대로 보여요)
+
+1. `samilhankki@gmail.com`으로 로그인 → https://myaccount.google.com/security → **2단계 인증** 사용 설정.
+2. https://myaccount.google.com/apppasswords → 앱 이름 `samil-hankki` → **만들기** → 16자리 비밀번호 복사.
+3. Vercel → samil-hankki → **Settings → Environments → Production** → Environment Variables에 추가:
+
+   | Key | Value |
+   |---|---|
+   | `GMAIL_USER` | `samilhankki@gmail.com` |
+   | `GMAIL_APP_PASSWORD` | 2번의 16자리 |
+
+4. **Deployments → ⋯ → Redeploy**.
+5. 확인: 앱에서 내 이메일로 신청 → 메일이 오는지(스팸함 포함) 확인 → 운영자 콘솔에서 테스트 신청 삭제.
+
+### 알아 두기
+- Gmail은 하루 약 500통까지 보낼 수 있어요. 300~400명 신청이면 충분해요.
+- 이메일 + 코드가 맞을 때만 발송돼요. 아무나 임의 주소로 메일을 보낼 수 없어요.
+- 앱 비밀번호가 새면 https://myaccount.google.com/apppasswords 에서 삭제하고 새로 만든 뒤 Vercel 값을 바꾸세요.
+- 사내메일(pwc.com)을 허용하려면 `index.html`의 `EMAIL_DOMAINS`와 `api/send-code.js`의 `EMAIL_DOMAINS`를 **둘 다** 바꿔야 해요.
+
 ---
 
 ## 꼭 지켜 주세요 (보안)

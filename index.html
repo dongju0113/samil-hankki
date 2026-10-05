@@ -569,6 +569,7 @@
           <div id="confirmedCode" class="text-4xl font-bold tracking-[0.3em] text-pwc-orange pl-[0.3em]">------</div>
           <div class="apple-fine-print text-muted"><span id="confirmedEmail" class="break-all">-</span><br>이 기기에서는 자동으로 기억돼요.<br><b class="text-ink">다른 기기에서 볼 때 필요하니 화면을 캡처해 두세요.</b></div>
         </div>
+        <p id="mailStatus" class="hidden apple-fine-print text-muted" role="status"></p>
         <div class="space-y-2">
           <button onclick="goToStep(7)" class="apple-press w-full py-3.5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong transition">내 결과 확인하기</button>
           <button onclick="goHome()" class="w-full py-3 rounded-full bg-white border border-pwc-border hover:bg-pwc-soft text-ink apple-caption font-semibold transition">처음 화면으로</button>
@@ -1193,6 +1194,22 @@
       document.getElementById('surveyProgressContainer').classList.add('hidden');
       document.getElementById('stepCompleted').classList.remove('hidden');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      sendCodeEmail(email, code);
+    }
+    // 확인 코드를 이메일로도 보내기 (서버 함수 api/send-code.js). 실패해도 신청은 이미 완료된 상태
+    async function sendCodeEmail(email, code) {
+      const el = document.getElementById('mailStatus');
+      if (!location.protocol.startsWith('http')) { el.classList.add('hidden'); return; } // 파일을 직접 연 테스트에서는 발송 안 함
+      el.className = 'apple-fine-print text-muted';
+      el.innerText = '📧 확인 코드를 이메일로 보내는 중…';
+      try {
+        const res = await fetch('/api/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) });
+        if (!res.ok) throw new Error(res.status);
+        el.innerText = `📧 ${email}로 코드를 보냈어요. 안 보이면 스팸함도 확인해 주세요.`;
+      } catch (e) {
+        el.className = 'apple-fine-print text-red-600';
+        el.innerText = '이메일 발송에 실패했어요. 위 코드를 꼭 캡처해 두세요.';
+      }
     }
     function startNewApplication() {
       formData = emptyForm();
