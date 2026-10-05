@@ -18,7 +18,7 @@
 - 브라우저 코드에는 Supabase **publishable key만**. secret key·Gmail 앱 비밀번호는 Vercel 환경변수에만 있고, 코드·GitHub·채팅에 절대 넣지 않는다.
 - 신청자는 표를 직접 읽거나 쓸 수 없다(RLS). 신청자 기능은 `submit_application` / `get_my_result` / `respond_attend` / `respond_pass` 함수로만.
 - 시간 계산은 항상 한국 시간(KST) 기준. 서버(Vercel)는 UTC로 돈다.
-- 커밋 작성자는 `dongju0113`. GitHub 저장소 `dongju0113/samil-hankki`(비공개).
+- 커밋 작성자는 `dongju0113`. GitHub 저장소 `dongju0113/samil-hankki`(**공개** — 개인정보·키를 절대 커밋하지 않는다. 팀원 chayunho, rmfls1269 초대됨).
 
 ## 구조
 | 파일 | 역할 |
