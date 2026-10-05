@@ -53,11 +53,46 @@ Supabase 웹사이트(https://supabase.com/dashboard)에서 **삼일한끼 프�
 
 ---
 
+## 6단계. 매일 22:00 자동 매칭 켜기 (Vercel Cron)
+
+### 6-1. Supabase에 서버 실행 권한 추가
+1. **SQL Editor → + New query** 에 `supabase/03_allow_cron.sql` 전체를 붙여 넣고 **Run** → **Success** 확인.
+   (01번을 처음 실행하는 새 프로젝트라면 이미 들어 있어서 생략해도 돼요)
+
+### 6-2. Supabase secret key 복사
+1. Supabase 왼쪽 아래 **Project Settings**(톱니바퀴) → **API Keys**.
+2. **Secret keys** 영역에서 `sb_secret_...` 키 오른쪽 **복사** 버튼을 누릅니다. (키가 없으면 **+ New secret key** 로 하나 만드세요)
+   - 이 키는 **Vercel 환경변수 칸에만** 붙여 넣습니다. 다른 곳에 붙여 넣거나 저장하지 마세요.
+
+### 6-3. Vercel 환경변수 2개 넣기
+1. Vercel 대시보드 → **samil-hankki** 프로젝트 → 위쪽 **Settings** → 왼쪽 **Environment Variables**.
+2. 아래 2개를 하나씩 추가합니다. (Environments는 기본값 그대로, **Sensitive** 켜기 권장)
+
+   | Key | Value |
+   |---|---|
+   | `SUPABASE_SECRET_KEY` | 6-2에서 복사한 `sb_secret_...` |
+   | `CRON_SECRET` | 아무도 못 맞힐 긴 영문·숫자 (30자 이상) |
+
+3. **Save** 후, 위쪽 **Deployments** → 맨 위 배포의 `⋯` → **Redeploy** (환경변수는 다시 배포해야 적용돼요).
+
+### 6-4. 확인
+- Vercel 프로젝트 → **Settings → Cron Jobs** 에 `/api/cron-match` · `0 13 * * *` 가 보이면 등록 완료.
+  (`0 13 * * *` 은 세계 표준시 13시 = **한국 시간 22시**)
+- 다음 날 운영자 콘솔 **자동 매칭 설정 → 마지막 실행** 에 "자동 매칭 …"이 찍혀 있으면 정상.
+
+### 알아 두기
+- 무료(Hobby) 플랜은 **22:00~22:59 사이 어느 때** 실행돼요. (정각 보장은 유료 플랜)
+- 서버 실행 시각은 22시로 고정이에요. 운영자 콘솔의 **실행 시각**을 바꿔도 서버 시간은 안 바뀌어요.
+  (콘솔의 **매일 자동 매칭** 체크를 끄면 서버도 매칭을 건너뜁니다)
+- 운영자 콘솔이 열려 있을 때도 같은 기준으로 확인하고, 이미 실행된 회차는 다시 돌리지 않아요.
+
+---
+
 ## 꼭 지켜 주세요 (보안)
 
 - 앱 코드에 들어 있는 키는 **publishable key**(`sb_publishable_...`)뿐이에요. 원래 공개돼도 되는 키예요.
 - **secret key / service_role key**(`sb_secret_...` 또는 긴 `eyJ...`)는 `index.html`, GitHub, 카톡 어디에도 붙여 넣지 마세요.
-  나중에 Vercel 자동 매칭을 붙일 때 **Vercel 환경변수**에만 넣습니다.
+  자동 매칭용으로 **Vercel 환경변수**에만 넣습니다. (6단계)
 - 운영자 비밀번호를 잊으면 **Authentication → Users** 에서 해당 사용자 `...` 메뉴로 재설정할 수 있어요.
 
 ## 바뀐 동작 요약
@@ -70,7 +105,7 @@ Supabase 웹사이트(https://supabase.com/dashboard)에서 **삼일한끼 프�
 | 코드 무작위 대입 | 제한 없음 | 10번 틀리면 15분 잠금 |
 | 같은 이메일로 재신청 | 누구나 덮어쓰기 가능 | 그 이메일의 코드를 아는 사람만 (이 기기에 코드가 기억돼 있거나 "내 결과 확인하기"를 한 번 거친 경우) |
 | 운영자 입장 | 비밀번호 1234 | Supabase 로그인 + 운영자 등록된 계정 |
-| 자동 매칭 | 누구든 앱을 열고 있으면 실행 | 운영자 콘솔이 열려 있을 때만 (다음 단계: Vercel Cron) |
+| 자동 매칭 | 누구든 앱을 열고 있으면 실행 | 서버(Vercel Cron)가 매일 22시대에 실행 |
 
 ## 참고
 

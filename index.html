@@ -9,6 +9,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Supabase (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- 매칭 규칙 (서버 자동 매칭과 같은 파일을 사용) -->
+  <script src="matching.js"></script>
   <!-- Apple & Inter Font Stack -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -651,7 +653,7 @@
           <p id="autoStatus" class="apple-fine-print text-muted pt-3"></p>
           <button onclick="saveSettings()" class="apple-press mt-2 px-5 py-2 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">설정 저장</button>
         </div>
-        <p class="apple-fine-print text-muted bg-pwc-canvas rounded-lg p-3">응답은 Supabase에 저장돼요. 지금은 운영자 콘솔이 열려 있을 때 실행 시각이 지나면 매칭이 돌아가요. 서버 자동 실행(Vercel Cron)은 다음 단계에서 연결해요.</p>
+        <p class="apple-fine-print text-muted bg-pwc-canvas rounded-lg p-3">응답은 Supabase에 저장돼요. 자동 매칭은 서버가 매일 22시대(한국 시간)에 실행해요. 서버 실행 시각은 22시로 고정이라, 여기서 시각을 바꾸면 안내 문구만 바뀌어요.</p>
       </div>
 
       <div class="flex flex-wrap gap-2.5">
@@ -720,11 +722,9 @@
 
   <script>
     // ===== 설정값 =====
-    const fullWeekDays = [
-      '10/5(월)', '10/6(화)', '10/7(수)', '10/8(목)', '10/9(금)', '10/10(토)', '10/11(일)',
-      '10/12(월)', '10/13(화)', '10/14(수)', '10/15(목)', '10/16(금)', '10/17(토)', '10/18(일)'
-    ];
-    const timeSlots15Min = ['11:30', '11:45', '12:00', '12:15', '12:30', '12:45', '13:00'];
+    // 날짜·시간표와 매칭 규칙은 matching.js 한 곳에서 관리 (서버 자동 매칭과 공유)
+    const M = SamilMatching;
+    const { fullWeekDays, timeSlots15Min, sid } = M;
     const INTERESTS = [
       ['🏃‍♂️', '운동', ['헬스·러닝', '골프', '테니스·배드민턴', '등산', '기타 운동']],
       ['🍽️', '먹거리', ['맛집 탐방', '카페·디저트', '요리·와인']],
@@ -735,7 +735,6 @@
     // 신청에 쓸 수 있는 이메일 도메인. 사내메일이 나오면 'pwc.com'을 추가하거나 이 목록만 바꾸면 됩니다.
     const EMAIL_DOMAINS = ['naver.com', 'gmail.com'];
     const MY_KEY = 'samil-hankki-v2-my';         // 이 기기에서 마지막으로 쓴 이메일·확인 코드
-    const EVENT_YEAR = 2026;                     // supabase/01_schema.sql의 _slot_ts와 같게 유지
 
     // ===== Supabase 연결 =====
     // publishable(anon) key는 브라우저에 공개돼도 되는 키예요. 실제 보호는 Supabase의 RLS와 함수가 맡아요.
@@ -808,7 +807,7 @@
       const [a, g, m, s] = await Promise.all([
         sb.from('applications').select('*').order('created_at', { ascending: false }),
         sb.from('groups').select('*').order('no'),
-        sb.from('group_members').select('*').order('added_at'),
+        sb.from('group_members').select('*').order('seq'),
         sb.from('settings').select('*').eq('id', 1).single()
       ]);
       const err = a.error || g.error || m.error || s.error;
@@ -877,10 +876,7 @@
     function esc(s) {
       return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
-    function slotKeyOrder(s) {
-      const [d, t] = s.split(' ');
-      return fullWeekDays.indexOf(d) * 100 + timeSlots15Min.indexOf(t);
-    }
+    const slotKeyOrder = M.slotKeyOrder;
     function sortSlots(slots) { return [...slots].sort((a, b) => slotKeyOrder(a) - slotKeyOrder(b)); }
     function summarizeSlots(slots) {
       // "10/7(수) 12:00, 12:15 · 10/8(목) 11:30" 처럼 날짜별로 묶어서 보여 줌
@@ -1247,45 +1243,22 @@
       goToStep(0);
     }
 
-    // ===== 날짜·시간 도우미 =====
-    function slotDate(slot) {
-      // "10/7(수) 12:00" → 2026-10-07 12:00
-      const m = slot.match(/^(\d+)\/(\d+)\(.\) (\d+):(\d+)$/);
-      return m ? new Date(EVENT_YEAR, +m[1] - 1, +m[2], +m[3], +m[4]) : new Date(0);
-    }
-    function isSlotOpen(slot, now = new Date()) {
-      if (matchState.settings.includePast) return true;
-      return slotDate(slot) - now >= (Number(matchState.settings.cutoffMin) || 0) * 60000;
-    }
-    function openSlotsOf(r, now = new Date()) { return (r.slots || []).filter(s => isSlotOpen(s, now)); }
-    function fmtDateTime(d) {
-      const p = n => String(n).padStart(2, '0');
-      return `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`;
-    }
-    function lastScheduledBefore(now) {
-      const [h, m] = (matchState.settings.time || '22:00').split(':').map(Number);
-      const d = new Date(now); d.setHours(h, m, 0, 0);
-      if (d > now) d.setDate(d.getDate() - 1);
-      return d;
-    }
-    function nextScheduled(now = new Date()) {
-      const d = lastScheduledBefore(now); d.setDate(d.getDate() + 1); return d;
-    }
+    // ===== 날짜·시간 도우미 (계산은 matching.js, 한국 시간 기준) =====
+    const fmtDateTime = M.fmtDateTime;
+    function isSlotOpen(slot, now = new Date()) { return M.isSlotOpen(slot, matchState.settings, now); }
+    function openSlotsOf(r, now = new Date()) { return M.openSlotsOf(r, matchState.settings, now); }
+    function lastScheduledBefore(now) { return M.lastScheduledBefore(matchState.settings.time, now); }
+    function nextScheduled(now = new Date()) { return new Date(lastScheduledBefore(now).getTime() + 24 * 60 * 60000); }
 
     // ===== 조 데이터 도우미 =====
-    const sid = x => String(x);
     function byIdMap() { return Object.fromEntries(responseList.map(r => [sid(r.id), r])); }
     function membersOf(g, byId = byIdMap()) { return g.memberIds.map(id => byId[sid(id)]).filter(Boolean); }
     // ===== 참석 응답 =====
-    // 응답 마감 = 점심 시작 N분 전 (테스트 모드에서는 마감 없음)
-    function groupDeadline(g) { return new Date(slotDate(g.slot).getTime() - (Number(matchState.settings.cutoffMin) || 0) * 60000); }
-    function isDeadlinePassed(g, now = new Date()) { return !matchState.settings.includePast && now >= groupDeadline(g); }
-    function responseOf(g, id) { return (g.responses || {})[sid(id)] || 'pending'; }
-    function yesCount(g) { return g.memberIds.filter(id => responseOf(g, id) === 'yes').length; }
-    // 확정: 운영자 강제 확정 / 전원 참석 / 마감이 지남(무응답은 참석으로 간주)
-    function isConfirmed(g) {
-      return g.locked || (g.memberIds.length >= 2 && yesCount(g) === g.memberIds.length) || isDeadlinePassed(g);
-    }
+    function groupDeadline(g) { return M.groupDeadline(g, matchState.settings); }
+    function isDeadlinePassed(g, now = new Date()) { return M.isDeadlinePassed(g, matchState.settings, now); }
+    const responseOf = M.responseOf;
+    const yesCount = M.yesCount;
+    function isConfirmed(g) { return M.isConfirmed(g, matchState.settings); }
     function statusLabel(g) {
       if (g.locked) return '확정 (운영자)';
       if (isConfirmed(g)) return '확정';
@@ -1296,7 +1269,8 @@
       return responseList.filter(r => !assigned.has(sid(r.id)));
     }
 
-    // ===== 자동 매칭 (임시: 운영자 콘솔이 열려 있을 때 실행 시각이 지났으면 실행. 이후 Vercel Cron으로 교체) =====
+    // ===== 자동 매칭 =====
+    // 평소에는 서버(Vercel Cron, api/cron-match.js)가 매일 실행. 운영자 콘솔이 열려 있으면 여기서도 확인 (이미 실행됐으면 건너뜀)
     function checkAutoMatch() {
       const st = matchState.settings;
       if (!isAdmin || !st.autoOn) return;
@@ -1306,41 +1280,7 @@
       if (due.getTime() > since) runMatching('auto');
     }
 
-    // ===== 매칭 점수 (기존 그대로) =====
-    function sizeOk(size, r) {
-      const g = r.groupSizes || [];
-      if (size <= 2) return g.includes('2명');
-      if (size <= 4) return g.includes('3~4명');
-      return g.includes('5명~');
-    }
-    function desiredSize(r) {
-      const g = r.groupSizes || [];
-      if (g.includes('3~4명')) return 4;
-      if (g.includes('5명~')) return 5;
-      return 2;
-    }
-    function shared(a, b) { return a.filter(x => b.includes(x)); }
-    function pairScore(a, b) {
-      const si = shared(a.interests || [], b.interests || []).length;
-      const sf = shared(a.foodCategories || [], b.foodCategories || []).length;
-      let s = si * 2 + sf;
-      if ((a.avoid || []).includes(sid(b.id)) || (b.avoid || []).includes(sid(a.id))) s -= 100; // 패스했던 조원은 피함
-      if (a.budget === b.budget || a.budget === '무관' || b.budget === '무관') s += 1;
-      if (a.vibe === b.vibe || a.vibe === '둘 다 좋아요' || b.vibe === '둘 다 좋아요') s += 1;
-      if (a.spicy === b.spicy) s += 0.5;
-      [[a, b], [b, a]].forEach(([me, other]) => (me.priority || []).forEach((p, idx) => {
-        const w = idx === 0 ? 4 : 3; // 먼저 고른 조건에 더 큰 가중치
-        if (p === '관심사') s += si * w;
-        if (p === '음식 취향') s += sf * w;
-        if (p === '다른 부문' && me.dept !== other.dept) s += w;
-        if (p === '같은 부문' && me.dept === other.dept) s += w;
-        if (p === '나이대' && me.birthYear && other.birthYear && Math.abs(me.birthYear - other.birthYear) <= 3) s += w;
-      }));
-      return s;
-    }
-    function groupScore(group, c) { return group.reduce((sum, m) => sum + pairScore(m, c), 0); }
-
-    // ===== 매칭 실행: 아직 조가 없는 사람만 대상 (이미 편성된 조는 건드리지 않음) =====
+    // ===== 매칭 실행: 규칙은 matching.js의 computeMatching (서버 자동 매칭과 같은 계산) =====
     async function runMatching(source = 'manual') {
       if (!isAdmin || matchBusy) return;
       matchBusy = true;
@@ -1348,85 +1288,13 @@
     }
     async function runMatchingOnce(source) {
       if (!await loadAll()) return;   // 최신 데이터 기준으로 매칭
-      const now = new Date();
-      const byId = byIdMap();
-      const sizeBefore = Object.fromEntries(matchState.groups.map(g => [g.id, g.memberIds.length]));
-      const waiting = waitingList();
-      const unassigned = new Set(waiting.map(r => sid(r.id)));
-      const before = unassigned.size;
-      const openOf = r => openSlotsOf(r, now);
-      const allSlots = fullWeekDays.flatMap(d => timeSlots15Min.map(t => `${d} ${t}`)).filter(s => isSlotOpen(s, now));
-      const formed = [];
-
-      // 1차: 3명 이상 모이는 칸 → 2차: 2명 이상 모이는 칸
-      for (const minPool of [3, 2]) {
-        const used = new Set();
-        while (true) {
-          let best = null, bestPool = [];
-          allSlots.forEach(slot => {
-            if (used.has(slot)) return;
-            const pool = [...unassigned].map(id => byId[id]).filter(r => openOf(r).includes(slot));
-            if (pool.length > bestPool.length) { best = slot; bestPool = pool; }
-          });
-          if (!best || bestPool.length < minPool) break;
-          used.add(best);
-
-          const pool = bestPool.sort((a, b) => openOf(a).length - openOf(b).length); // 가능한 칸이 적은 사람 먼저
-          const slotGroups = [];
-          while (pool.length >= 2) {
-            const seed = pool.shift();
-            let size = Math.min(desiredSize(seed), pool.length + 1);
-            if (size < 3 && !sizeOk(2, seed)) {
-              if (slotGroups.length) { pool.unshift(seed); break; }
-              if (pool.length + 1 < 3) { pool.unshift(seed); break; }
-              size = 3;
-            }
-            const g = [seed];
-            while (g.length < size && pool.length) {
-              const fit = c => groupScore(g, c) + (sizeOk(size, c) ? 0 : -8);
-              pool.sort((a, b) => fit(b) - fit(a));
-              g.push(pool.shift());
-            }
-            slotGroups.push(g);
-          }
-          pool.forEach(r => {
-            const cand = slotGroups.filter(g => g.length < 6 && g.length >= 2).sort((a, b) => groupScore(b, r) - groupScore(a, r))[0];
-            if (cand) cand.push(r);
-          });
-          slotGroups.forEach(g => { g.forEach(m => unassigned.delete(sid(m.id))); formed.push({ slot: best, members: g }); });
-        }
-      }
-
-      // 새로 만든 조 저장 (번호는 계속 이어서)
-      formed.sort((a, b) => slotKeyOrder(a.slot) - slotKeyOrder(b.slot)).forEach(f => {
-        matchState.groups.push({
-          id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-          no: matchState.nextNo++, slot: f.slot, memberIds: f.members.map(m => m.id),
-          locked: false, responses: {}, createdAt: now.toISOString(), isNew: true
-        });
-      });
-
-      // 그래도 남은 사람: 확정되지 않은 기존 조 중 시간이 맞고 자리가 있는 곳에 합류
-      [...unassigned].forEach(id => {
-        const r = byId[id];
-        const cand = matchState.groups
-          .filter(g => !isConfirmed(g) && g.memberIds.length >= 2 && g.memberIds.length < 6 && openOf(r).includes(g.slot))
-          .sort((a, b) => groupScore(membersOf(b, byId), r) - groupScore(membersOf(a, byId), r))[0];
-        if (cand) { cand.memberIds.push(r.id); unassigned.delete(id); }
-      });
-
-      const matched = before - unassigned.size;
-      const summary = `${source === 'auto' ? '자동' : '수동'} 매칭 ${fmtDateTime(now)} · 새 조 ${formed.length}개 · ${matched}명 배정 · 대기 ${unassigned.size}명`;
-
+      const result = M.computeMatching({ responses: responseList, groups: matchState.groups, settings: matchState.settings, now: new Date(), source });
       // Supabase에 저장: 새 조(조 번호는 서버에서 발급) + 기존 조에 합류한 사람 + 실행 기록
-      const newGroups = matchState.groups.filter(g => g.isNew).map(g => ({ slot: g.slot, memberIds: g.memberIds.map(sid) }));
-      const joins = matchState.groups.filter(g => !g.isNew)
-        .flatMap(g => g.memberIds.slice(sizeBefore[g.id]).map(m => ({ groupId: g.id, memberId: sid(m) })));
-      const { error } = await sb.rpc('admin_save_matching', { p_groups: newGroups, p_joins: joins, p_summary: summary, p_auto: source === 'auto' });
+      const { error } = await sb.rpc('admin_save_matching', { p_groups: result.newGroups, p_joins: result.joins, p_summary: result.summary, p_auto: source === 'auto' });
       await loadAll();
       renderAdmin();
       if (error) return showToast('매칭 결과를 저장하지 못했어요: ' + error.message);
-      showToast(before ? summary : '매칭을 기다리는 신청자가 없어요.');
+      showToast(result.before ? result.summary : '매칭을 기다리는 신청자가 없어요.');
     }
     // deptCount: 내 결과 화면에서는 비공개 부문을 내려받지 않으므로 서버가 센 부문 수를 사용
     function groupReasons(members, deptCount) {
