@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "description": "삼일한끼 검사용 (앱 자체는 빌드·설치 없이 동작. SQL 검사에만 PGlite 사용)",
+  "scripts": {
+    "test": "node run-all.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  }
+}

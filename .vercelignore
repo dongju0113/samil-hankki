@@ -1,0 +1,6 @@
+# 사이트에 공개할 필요 없는 파일 (api/, index.html, matching.js, vercel.json만 배포)
+tests/
+docs/
+supabase/
+CLAUDE.md
+.omc/
