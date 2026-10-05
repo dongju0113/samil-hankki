@@ -7,6 +7,8 @@
   <title>삼일한끼 - 사내 점심 네트워킹</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Supabase (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Apple & Inter Font Stack -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -649,7 +651,7 @@
           <p id="autoStatus" class="apple-fine-print text-muted pt-3"></p>
           <button onclick="saveSettings()" class="apple-press mt-2 px-5 py-2 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">설정 저장</button>
         </div>
-        <p class="apple-fine-print text-muted bg-pwc-canvas rounded-lg p-3">데모 모드: 지금은 응답이 이 브라우저에만 저장되고, 웹앱이 열려 있을 때 실행 시각이 지나면 매칭이 돌아가요. Supabase를 연결하면 서버가 매일 자동으로 실행해요.</p>
+        <p class="apple-fine-print text-muted bg-pwc-canvas rounded-lg p-3">응답은 Supabase에 저장돼요. 지금은 운영자 콘솔이 열려 있을 때 실행 시각이 지나면 매칭이 돌아가요. 서버 자동 실행(Vercel Cron)은 다음 단계에서 연결해요.</p>
       </div>
 
       <div class="flex flex-wrap gap-2.5">
@@ -704,7 +706,8 @@
     <div class="w-full max-w-sm bg-white rounded-2xl shadow-lg p-6 space-y-4">
       <h2 id="dialogTitle" class="apple-caption-strong text-ink text-base"></h2>
       <p id="dialogMsg" class="apple-caption text-muted"></p>
-      <input id="dialogInput" type="password" autocomplete="off" class="hidden w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+      <input id="dialogEmail" type="email" autocomplete="username" placeholder="운영자 이메일" class="hidden w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+      <input id="dialogInput" type="password" autocomplete="current-password" placeholder="비밀번호" class="hidden w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
       <div class="flex gap-2 pt-1">
         <button id="dialogCancel" type="button" class="apple-press flex-1 py-3 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft apple-caption font-semibold text-ink transition">취소</button>
         <button id="dialogOk" type="button" class="apple-press flex-1 py-3 rounded-full text-white apple-caption-strong transition"></button>
@@ -729,14 +732,17 @@
       ['✈️', '여가', ['국내여행', '해외여행', '게임', '프로야구 직관']],
       ['📚', '자기계발', ['해외파견', '외국어', '재테크·부동산', '업무·커리어']]
     ];
-    // ⚠️ 화면 잠금용 비밀번호입니다. 웹페이지 코드는 누구나 볼 수 있으므로 진짜 보안은 아니에요.
     // 신청에 쓸 수 있는 이메일 도메인. 사내메일이 나오면 'pwc.com'을 추가하거나 이 목록만 바꾸면 됩니다.
     const EMAIL_DOMAINS = ['naver.com', 'gmail.com'];
-    const ADMIN_PASSWORD = '1234';
-    const STORAGE_KEY = 'samil-hankki-v2-responses';
-    const MATCH_KEY = 'samil-hankki-v2-match';   // 편성된 조 + 자동 매칭 설정
     const MY_KEY = 'samil-hankki-v2-my';         // 이 기기에서 마지막으로 쓴 이메일·확인 코드
-    const EVENT_YEAR = 2026;
+    const EVENT_YEAR = 2026;                     // supabase/01_schema.sql의 _slot_ts와 같게 유지
+
+    // ===== Supabase 연결 =====
+    // publishable(anon) key는 브라우저에 공개돼도 되는 키예요. 실제 보호는 Supabase의 RLS와 함수가 맡아요.
+    // ⚠️ service_role / secret key는 절대 이 파일에 넣지 마세요.
+    const SUPABASE_URL = 'https://lhanlpwjqrthrrpunryw.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_jGLrXnDwh_Aye8uMoR64ZA_dOKlWX2g';
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
     // ===== 상태 =====
     // 이 기기에 기억된 내 이메일·코드 (각자의 휴대폰·노트북 브라우저에 저장)
@@ -752,33 +758,80 @@
       };
     }
     let formData = emptyForm();
-    let responseList = loadResponses();
-    let matchState = loadMatchState();
+    let responseList = [];               // 운영자 로그인 후에만 채워짐 (RLS)
+    let matchState = defaultMatchState();
+    let myGroup = null;                  // 내 결과 화면에서 마지막으로 불러온 내 조
     let isEditingFromStep5 = false;
     let isAdmin = false;
+    let matchBusy = false;
 
-    function loadResponses() {
-      try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; } catch (e) { return []; }
-    }
     function defaultMatchState() {
       return {
         groups: [], nextNo: 1, lastRunAt: null, lastAutoRunAt: null, lastRunSummary: '',
         settings: { autoOn: true, time: '22:00', cutoffMin: 60, includePast: false, anchor: new Date().toISOString() }
       };
     }
-    function loadMatchState() {
-      const d = defaultMatchState();
-      try {
-        const raw = localStorage.getItem(MATCH_KEY);
-        if (raw) { const st = JSON.parse(raw); return { ...d, ...st, settings: { ...d.settings, ...(st.settings || {}) } }; }
-      } catch (e) {}
-      return d;
+
+    // ===== Supabase ↔ 화면 데이터 변환 =====
+    function fromDbApp(r) {
+      return {
+        id: r.id, name: r.name, email: r.email, code: r.code, birthYear: r.birth_year, gender: r.gender,
+        dept: r.dept, deptOpen: r.dept_open, slots: r.slots || [], allergy: r.allergy, budget: r.budget,
+        foodCategories: r.food_categories || [], spicy: r.spicy, groupSizes: r.group_sizes || [], vibe: r.vibe,
+        interests: r.interests || [], favoriteThing: r.favorite_thing, priority: r.priority || [],
+        avoid: r.avoid || [], sample: r.sample, createdAt: r.created_at
+      };
     }
-    function saveMatchState() {
-      try { localStorage.setItem(MATCH_KEY, JSON.stringify(matchState)); } catch (e) {}
+    function toDbApp(f) {
+      return {
+        email: f.email, name: f.name, birth_year: String(f.birthYear || ''), gender: f.gender, dept: f.dept,
+        dept_open: !!f.deptOpen, slots: f.slots, allergy: f.allergy || '', budget: f.budget,
+        food_categories: f.foodCategories, spicy: f.spicy, group_sizes: f.groupSizes, vibe: f.vibe,
+        interests: f.interests, favorite_thing: f.favoriteThing || '', priority: f.priority
+      };
     }
-    function saveResponses() {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(responseList)); } catch (e) { /* 저장 불가 환경이면 메모리에만 유지 */ }
+    function applySettings(s) {
+      matchState.settings = { autoOn: s.auto_on, time: s.match_time, cutoffMin: s.cutoff_min, includePast: s.include_past, anchor: s.anchor };
+      matchState.nextNo = s.next_no;
+      matchState.lastRunAt = s.last_run_at;
+      matchState.lastAutoRunAt = s.last_auto_run_at;
+      matchState.lastRunSummary = s.last_run_summary || '';
+    }
+    // 설정(매칭 시각 등)은 누구나 읽을 수 있음
+    async function loadSettings() {
+      const { data, error } = await sb.from('settings').select('*').eq('id', 1).maybeSingle();
+      if (!error && data) applySettings(data);
+      return !error;
+    }
+    // 전체 신청·조 데이터: RLS 때문에 운영자 로그인 상태에서만 내려옴
+    async function loadAll() {
+      const [a, g, m, s] = await Promise.all([
+        sb.from('applications').select('*').order('created_at', { ascending: false }),
+        sb.from('groups').select('*').order('no'),
+        sb.from('group_members').select('*').order('added_at'),
+        sb.from('settings').select('*').eq('id', 1).single()
+      ]);
+      const err = a.error || g.error || m.error || s.error;
+      if (err) { showToast('데이터를 불러오지 못했어요: ' + err.message); return false; }
+      responseList = a.data.map(fromDbApp);
+      matchState.groups = g.data.map(x => ({ id: x.id, no: x.no, slot: x.slot, locked: x.locked, createdAt: x.created_at, memberIds: [], responses: {} }));
+      const byGroup = Object.fromEntries(matchState.groups.map(x => [x.id, x]));
+      m.data.forEach(x => {
+        const grp = byGroup[x.group_id]; if (!grp) return;
+        grp.memberIds.push(x.application_id);
+        grp.responses[x.application_id] = x.response;
+      });
+      applySettings(s.data);
+      return true;
+    }
+    // 운영자 수정 → 저장 → 최신 데이터 다시 불러와서 화면 갱신
+    async function adminSave(request, okMsg) {
+      const { error } = await request;
+      if (error) showToast('저장하지 못했어요: ' + error.message);
+      else if (okMsg) showToast(okMsg);
+      await loadAll();
+      renderAdmin(); updateLandingNote();
+      return !error;
     }
 
     // ===== 공통 =====
@@ -789,30 +842,35 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => t.classList.add('hide'), 2600);
     }
-    // 페이지 안 팝업: 확인 → true(또는 입력값), 취소 → null
-    function openDialog({ title, message = '', input = false, okText = '확인', danger = false }) {
+    // 페이지 안 팝업: 확인 → true(로그인 모드면 { email, password }), 취소 → null
+    function openDialog({ title, message = '', login = false, okText = '확인', danger = false }) {
       const box = document.getElementById('dialog');
+      const email = document.getElementById('dialogEmail');
       const field = document.getElementById('dialogInput');
       const ok = document.getElementById('dialogOk');
       const cancel = document.getElementById('dialogCancel');
       document.getElementById('dialogTitle').innerText = title;
       document.getElementById('dialogMsg').innerText = message;
       document.getElementById('dialogMsg').classList.toggle('hidden', !message);
-      field.value = ''; field.classList.toggle('hidden', !input);
+      email.value = ''; email.classList.toggle('hidden', !login);
+      field.value = ''; field.classList.toggle('hidden', !login);
       ok.innerText = okText;
       ok.className = 'apple-press flex-1 py-3 rounded-full text-white apple-caption-strong transition ' + (danger ? 'bg-red-600 hover:bg-red-700' : 'bg-pwc-orange hover:bg-pwc-orange-hover');
       box.classList.remove('hidden');
-      setTimeout(() => (input ? field : ok).focus(), 30);
+      setTimeout(() => (login ? email : ok).focus(), 30);
       return new Promise(resolve => {
+        const value = () => login ? { email: email.value.trim(), password: field.value } : true;
         const close = val => {
           box.classList.add('hidden');
-          ok.onclick = cancel.onclick = box.onclick = field.onkeydown = document.onkeydown = null;
+          field.value = '';
+          ok.onclick = cancel.onclick = box.onclick = email.onkeydown = field.onkeydown = document.onkeydown = null;
           resolve(val);
         };
-        ok.onclick = () => close(input ? field.value : true);
+        ok.onclick = () => close(value());
         cancel.onclick = () => close(null);
         box.onclick = e => { if (e.target === box) close(null); };
-        field.onkeydown = e => { if (e.key === 'Enter') close(field.value); };
+        email.onkeydown = e => { if (e.key === 'Enter') field.focus(); };
+        field.onkeydown = e => { if (e.key === 'Enter') close(value()); };
         document.onkeydown = e => { if (e.key === 'Escape') close(null); };
       });
     }
@@ -1096,28 +1154,40 @@
     }
 
     // ===== 제출 =====
-    function genCode() {
+    // 샘플 데이터용 코드 (실제 신청자 코드는 서버 함수가 발급)
+    function genCode(pending = []) {
       let c;
-      do { c = String(Math.floor(100000 + Math.random() * 900000)); } while (responseList.some(r => r.code === c));
+      do { c = String(Math.floor(100000 + Math.random() * 900000)); } while (responseList.some(r => r.code === c) || pending.some(r => r.code === c));
       return c;
     }
-    function finishApplication() {
+    async function finishApplication() {
       readInputs();
       if (!document.getElementById('checkFinalConsent').checked) return showToast('조원 공유 및 매칭 동의에 체크해 주세요.');
       for (const s of [1, 2, 4]) {
         const msg = validateStep(s);
         if (msg) { showToast(msg); return jumpToEdit(s); }
       }
-      const email = `${formData.emailId}@${formData.emailDomain}`;
-      // 같은 이메일로 다시 신청하면: 기존 확인 코드는 유지하고, 새 조건으로 다시 매칭되도록 기존 조에서 빠짐
-      const prev = responseList.find(r => r.email.toLowerCase() === email.toLowerCase());
-      const id = prev ? prev.id : Date.now() + Math.random();
-      const code = (prev && prev.code) || genCode();
-      if (prev) removeFromGroups(id);
-      const record = { ...formData, email, code, slots: sortSlots(formData.slots), id, createdAt: new Date().toISOString() };
-      responseList = responseList.filter(r => r.email.toLowerCase() !== email.toLowerCase());
-      responseList.unshift(record);
-      saveResponses(); saveMatchState();
+      const email = `${formData.emailId}@${formData.emailDomain}`.toLowerCase();
+      // 같은 이메일로 다시 신청하면: 이 기기에 기억된 확인 코드가 맞을 때만 내용을 바꾸고(코드는 유지),
+      // 새 조건으로 다시 매칭되도록 기존 조에서 빠짐 (서버 함수 submit_application이 처리)
+      const my = loadMy();
+      const knownCode = my && my.email.toLowerCase() === email ? my.code : null;
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = true;
+      const { data, error } = await sb.rpc('submit_application', {
+        p_form: toDbApp({ ...formData, email, slots: sortSlots(formData.slots) }),
+        p_code: knownCode
+      });
+      submitBtn.disabled = false;
+      if (error) return showToast('저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.');
+      if (!data.ok) {
+        return showToast({
+          exists: '이미 신청한 이메일이에요. "내 결과 확인하기"에서 이메일과 확인 코드를 입력한 뒤 다시 신청해 주세요.',
+          locked: '확인 코드를 여러 번 틀려서 15분 동안 잠겼어요. 잠시 후 다시 시도해 주세요.',
+          invalid: '입력 내용을 다시 확인해 주세요.'
+        }[data.reason] || '저장하지 못했어요. 다시 시도해 주세요.');
+      }
+      const code = data.code;
       saveMy(email, code);
 
       document.getElementById('confirmedEmail').innerText = email;
@@ -1142,14 +1212,40 @@
     }
 
     // ===== 운영자 =====
+    // Supabase 로그인 + admins 표에 등록된 계정만 입장
     async function requestAdminAccess() {
       if (isAdmin) { goToStep(6); return; }
-      const pass = await openDialog({ title: '운영자 콘솔', message: '운영자 비밀번호를 입력해 주세요.', input: true, okText: '들어가기' });
-      if (pass === null) return;
-      if (pass === ADMIN_PASSWORD) { isAdmin = true; goToStep(6); }
-      else showToast('비밀번호가 올바르지 않습니다.');
+      const { data: { session } } = await sb.auth.getSession();
+      if (session && await enterAdmin(true)) return;   // 이 기기에 로그인이 남아 있으면 바로 입장
+      const cred = await openDialog({ title: '운영자 콘솔', message: '운영자 이메일과 비밀번호로 로그인해 주세요.', login: true, okText: '로그인' });
+      if (cred === null) return;
+      if (!cred.email || !cred.password) return showToast('이메일과 비밀번호를 모두 입력해 주세요.');
+      const { error } = await sb.auth.signInWithPassword({ email: cred.email, password: cred.password });
+      if (error) {
+        return showToast({
+          invalid_credentials: '이메일 또는 비밀번호가 올바르지 않습니다.',
+          email_not_confirmed: '이메일 인증이 안 된 계정이에요. Supabase에서 계정을 인증(Confirm) 처리해 주세요.',
+          user_banned: '사용이 정지된 계정이에요.',
+          over_request_rate_limit: '로그인 시도가 너무 많아요. 잠시 후 다시 시도해 주세요.'
+        }[error.code] || `로그인 실패: ${error.message}`);
+      }
+      if (!await enterAdmin()) await sb.auth.signOut();
     }
-    function exitAdmin() { isAdmin = false; goToStep(0); }
+    async function enterAdmin(silent = false) {
+      const { data: ok, error } = await sb.rpc('is_admin');
+      if (error || !ok) { if (!silent) showToast('운영자로 등록되지 않은 계정이에요.'); return false; }
+      isAdmin = true;
+      if (!await loadAll()) { isAdmin = false; return false; }
+      goToStep(6);
+      checkAutoMatch();
+      return true;
+    }
+    async function exitAdmin() {
+      isAdmin = false;
+      responseList = []; matchState.groups = [];
+      await sb.auth.signOut();
+      goToStep(0);
+    }
 
     // ===== 날짜·시간 도우미 =====
     function slotDate(slot) {
@@ -1179,15 +1275,7 @@
     // ===== 조 데이터 도우미 =====
     const sid = x => String(x);
     function byIdMap() { return Object.fromEntries(responseList.map(r => [sid(r.id), r])); }
-    function groupOfMember(id) { return matchState.groups.find(g => g.memberIds.some(m => sid(m) === sid(id))); }
     function membersOf(g, byId = byIdMap()) { return g.memberIds.map(id => byId[sid(id)]).filter(Boolean); }
-    function removeFromGroups(id) {
-      matchState.groups.forEach(g => {
-        g.memberIds = g.memberIds.filter(m => sid(m) !== sid(id));
-        if (g.responses) delete g.responses[sid(id)];
-      });
-      matchState.groups = matchState.groups.filter(g => g.memberIds.length > 0);
-    }
     // ===== 참석 응답 =====
     // 응답 마감 = 점심 시작 N분 전 (테스트 모드에서는 마감 없음)
     function groupDeadline(g) { return new Date(slotDate(g.slot).getTime() - (Number(matchState.settings.cutoffMin) || 0) * 60000); }
@@ -1208,10 +1296,10 @@
       return responseList.filter(r => !assigned.has(sid(r.id)));
     }
 
-    // ===== 자동 매칭 (데모: 웹앱이 열려 있을 때 실행 시각이 지났으면 실행) =====
+    // ===== 자동 매칭 (임시: 운영자 콘솔이 열려 있을 때 실행 시각이 지났으면 실행. 이후 Vercel Cron으로 교체) =====
     function checkAutoMatch() {
       const st = matchState.settings;
-      if (!st.autoOn) return;
+      if (!isAdmin || !st.autoOn) return;
       const now = new Date();
       const due = lastScheduledBefore(now);
       const since = Math.max(new Date(st.anchor).getTime(), matchState.lastAutoRunAt ? new Date(matchState.lastAutoRunAt).getTime() : 0);
@@ -1253,9 +1341,16 @@
     function groupScore(group, c) { return group.reduce((sum, m) => sum + pairScore(m, c), 0); }
 
     // ===== 매칭 실행: 아직 조가 없는 사람만 대상 (이미 편성된 조는 건드리지 않음) =====
-    function runMatching(source = 'manual') {
+    async function runMatching(source = 'manual') {
+      if (!isAdmin || matchBusy) return;
+      matchBusy = true;
+      try { await runMatchingOnce(source); } finally { matchBusy = false; }
+    }
+    async function runMatchingOnce(source) {
+      if (!await loadAll()) return;   // 최신 데이터 기준으로 매칭
       const now = new Date();
       const byId = byIdMap();
+      const sizeBefore = Object.fromEntries(matchState.groups.map(g => [g.id, g.memberIds.length]));
       const waiting = waitingList();
       const unassigned = new Set(waiting.map(r => sid(r.id)));
       const before = unassigned.size;
@@ -1307,7 +1402,7 @@
         matchState.groups.push({
           id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
           no: matchState.nextNo++, slot: f.slot, memberIds: f.members.map(m => m.id),
-          locked: false, responses: {}, createdAt: now.toISOString()
+          locked: false, responses: {}, createdAt: now.toISOString(), isNew: true
         });
       });
 
@@ -1321,65 +1416,66 @@
       });
 
       const matched = before - unassigned.size;
-      matchState.lastRunAt = now.toISOString();
-      if (source === 'auto') matchState.lastAutoRunAt = now.toISOString();
-      matchState.lastRunSummary = `${source === 'auto' ? '자동' : '수동'} 매칭 ${fmtDateTime(now)} · 새 조 ${formed.length}개 · ${matched}명 배정 · 대기 ${unassigned.size}명`;
-      saveMatchState();
-      if (isAdmin) renderAdmin();
-      if (source === 'manual' || isAdmin) showToast(before ? matchState.lastRunSummary : '매칭을 기다리는 신청자가 없어요.');
+      const summary = `${source === 'auto' ? '자동' : '수동'} 매칭 ${fmtDateTime(now)} · 새 조 ${formed.length}개 · ${matched}명 배정 · 대기 ${unassigned.size}명`;
+
+      // Supabase에 저장: 새 조(조 번호는 서버에서 발급) + 기존 조에 합류한 사람 + 실행 기록
+      const newGroups = matchState.groups.filter(g => g.isNew).map(g => ({ slot: g.slot, memberIds: g.memberIds.map(sid) }));
+      const joins = matchState.groups.filter(g => !g.isNew)
+        .flatMap(g => g.memberIds.slice(sizeBefore[g.id]).map(m => ({ groupId: g.id, memberId: sid(m) })));
+      const { error } = await sb.rpc('admin_save_matching', { p_groups: newGroups, p_joins: joins, p_summary: summary, p_auto: source === 'auto' });
+      await loadAll();
+      renderAdmin();
+      if (error) return showToast('매칭 결과를 저장하지 못했어요: ' + error.message);
+      showToast(before ? summary : '매칭을 기다리는 신청자가 없어요.');
     }
-    function groupReasons(members) {
+    // deptCount: 내 결과 화면에서는 비공개 부문을 내려받지 않으므로 서버가 센 부문 수를 사용
+    function groupReasons(members, deptCount) {
       const count = {};
       members.forEach(m => (m.interests || []).forEach(i => count[i] = (count[i] || 0) + 1));
       const tags = Object.entries(count).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, n]) => `${k} ${n}명`);
-      const depts = new Set(members.map(m => m.dept)).size;
+      const depts = deptCount ?? new Set(members.map(m => m.dept)).size;
       tags.push(depts > 1 ? `${depts}개 부문` : '같은 부문');
       return tags;
     }
 
     // ===== 운영자 수정 권한 =====
-    function moveMember(id, target) {
+    async function moveMember(id, target) {
       if (target === '__') return;
       const r = byIdMap()[sid(id)];
-      removeFromGroups(id);
-      if (target) {
-        const g = matchState.groups.find(x => x.id === target);
-        if (g) {
-          g.memberIds.push(r.id);
-          showToast(r.slots.includes(g.slot) ? `${r.name}님을 ${g.no}조로 옮겼어요.` : `⚠️ ${r.name}님이 고르지 않은 시간(${g.slot})이에요. 본인에게 따로 확인해 주세요.`);
-        }
-      } else showToast(`${r.name}님을 매칭 대기로 뺐어요.`);
-      saveMatchState(); renderAdmin();
+      const g = target ? matchState.groups.find(x => x.id === target) : null;
+      if (target && !g) return;
+      const msg = g
+        ? (r.slots.includes(g.slot) ? `${r.name}님을 ${g.no}조로 옮겼어요.` : `⚠️ ${r.name}님이 고르지 않은 시간(${g.slot})이에요. 본인에게 따로 확인해 주세요.`)
+        : `${r.name}님을 매칭 대기로 뺐어요.`;
+      await adminSave(sb.rpc('admin_move_member', { p_app: sid(id), p_target: target || null }), msg);
     }
-    function toggleLock(groupId) {
+    async function toggleLock(groupId) {
       const g = matchState.groups.find(x => x.id === groupId); if (!g) return;
-      g.locked = !g.locked;
-      saveMatchState(); renderAdmin();
-      showToast(g.locked ? `${g.no}조를 강제 확정했어요. 조원 응답과 상관없이 확정되고, 자동 매칭이 사람을 추가하지 않아요.` : `${g.no}조 강제 확정을 해제했어요.`);
+      const locked = !g.locked;
+      await adminSave(sb.from('groups').update({ locked }).eq('id', groupId),
+        locked ? `${g.no}조를 강제 확정했어요. 조원 응답과 상관없이 확정되고, 자동 매칭이 사람을 추가하지 않아요.` : `${g.no}조 강제 확정을 해제했어요.`);
     }
     async function disbandGroup(groupId) {
       const g = matchState.groups.find(x => x.id === groupId); if (!g) return;
       if (!await openDialog({ title: `${g.no}조 해체`, message: '조원 전원이 매칭 대기로 돌아가요.', okText: '해체', danger: true })) return;
-      matchState.groups = matchState.groups.filter(x => x.id !== groupId);
-      saveMatchState(); renderAdmin(); showToast(`${g.no}조를 해체했어요.`);
+      await adminSave(sb.from('groups').delete().eq('id', groupId), `${g.no}조를 해체했어요.`);
     }
     async function resetGroups() {
       if (!matchState.groups.length) return showToast('초기화할 편성 결과가 없어요.');
       if (!await openDialog({ title: '편성 결과 초기화', message: '모든 조가 사라지고 전원이 매칭 대기로 돌아가요. 신청 응답은 그대로 남아요.', okText: '초기화', danger: true })) return;
-      matchState.groups = []; matchState.nextNo = 1; matchState.lastRunSummary = '';
-      saveMatchState(); renderAdmin(); showToast('편성 결과를 초기화했어요.');
+      await adminSave(sb.rpc('admin_clear', { p_applications: false }), '편성 결과를 초기화했어요.');
     }
-    function saveSettings() {
+    async function saveSettings() {
       const t = document.getElementById('setTime').value;
       if (!/^\d{2}:\d{2}$/.test(t)) return showToast('실행 시각을 입력해 주세요.');
-      const st = matchState.settings;
-      st.autoOn = document.getElementById('setAutoOn').checked;
-      st.time = t;
-      st.cutoffMin = Math.max(0, Number(document.getElementById('setCutoff').value) || 0);
-      st.includePast = document.getElementById('setIncludePast').checked;
-      st.anchor = new Date().toISOString(); // 저장 이후 도래하는 실행 시각부터 자동 실행
-      saveMatchState(); renderAdmin(); updateLandingNote();
-      showToast(st.autoOn ? `저장했어요. 다음 자동 매칭은 ${fmtDateTime(nextScheduledAfterSave())}이에요.` : '저장했어요. 자동 매칭이 꺼져 있어요.');
+      const ok = await adminSave(sb.from('settings').update({
+        auto_on: document.getElementById('setAutoOn').checked,
+        match_time: t,
+        cutoff_min: Math.min(1440, Math.max(0, Number(document.getElementById('setCutoff').value) || 0)),
+        include_past: document.getElementById('setIncludePast').checked,
+        anchor: new Date().toISOString() // 저장 이후 도래하는 실행 시각부터 자동 실행
+      }).eq('id', 1));
+      if (ok) showToast(matchState.settings.autoOn ? `저장했어요. 다음 자동 매칭은 ${fmtDateTime(nextScheduledAfterSave())}이에요.` : '저장했어요. 자동 매칭이 꺼져 있어요.');
     }
     function nextScheduledAfterSave() {
       const now = new Date(); const last = lastScheduledBefore(now);
@@ -1479,18 +1575,35 @@
       document.getElementById('resultCode').value = my ? my.code : '';
       if (my) lookupResult(true);
     }
-    function lookupResult(silent = false) {
+    // 서버 함수 get_my_result가 이메일 + 코드가 맞을 때만 "내 정보 + 내 조"를 돌려줌
+    async function lookupResult(silent = false) {
       const email = document.getElementById('resultEmail').value.trim().toLowerCase();
       const code = document.getElementById('resultCode').value.trim();
       const box = document.getElementById('resultBox');
       if (!email || !code) { if (!silent) showToast('이메일과 확인 코드를 모두 입력해 주세요.'); return; }
-      const me = responseList.find(r => r.email.toLowerCase() === email);
-      if (!me || me.code !== code) {
-        box.innerHTML = `<div class="p-5 rounded-2xl border border-red-200 bg-red-50 apple-caption text-red-700">이메일 또는 확인 코드가 맞지 않아요. 신청 완료 화면에서 받은 6자리 코드를 확인해 주세요.</div>`;
+      const [{ data, error }] = await Promise.all([
+        sb.rpc('get_my_result', { p_email: email, p_code: code }),
+        loadSettings()
+      ]);
+      myGroup = null;
+      if (error) {
+        box.innerHTML = `<div class="p-5 rounded-2xl border border-red-200 bg-red-50 apple-caption text-red-700">결과를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.</div>`;
         return;
       }
+      if (!data.ok) {
+        box.innerHTML = `<div class="p-5 rounded-2xl border border-red-200 bg-red-50 apple-caption text-red-700">${data.locked
+          ? '확인 코드를 여러 번 틀려서 15분 동안 잠겼어요. 잠시 후 다시 시도해 주세요.'
+          : '이메일 또는 확인 코드가 맞지 않아요. 신청 완료 화면에서 받은 6자리 코드를 확인해 주세요.'}</div>`;
+        return;
+      }
+      const me = data.me;
       saveMy(me.email, code);
-      const g = groupOfMember(me.id);
+      const g = data.group && {
+        ...data.group,
+        memberIds: data.group.members.map(m => m.id),
+        responses: Object.fromEntries(data.group.members.map(m => [m.id, m.response]))
+      };
+      myGroup = g;
       if (!g) {
         let msg;
         if (!openSlotsOf(me).length) msg = '선택한 시간이 모두 마감됐어요. 가능한 시간을 넓혀서 다시 신청해 주세요.';
@@ -1506,7 +1619,7 @@
           </div><div class="text-center pt-3"><button onclick="forgetMe()" class="apple-fine-print font-semibold text-muted hover:text-red-600 underline">이 기기에서 내 정보 지우기</button></div>`;
         return;
       }
-      const members = membersOf(g);
+      const members = g.members;
       box.innerHTML = `
         <div class="p-6 rounded-2xl border border-pwc-orange bg-white shadow-pwc space-y-4">
           <div class="flex items-start justify-between gap-3">
@@ -1516,7 +1629,7 @@
             </div>
             <span class="shrink-0 px-2.5 py-1 rounded-full apple-fine-print font-semibold ${isConfirmed(g) ? 'bg-pwc-orange text-white' : 'bg-pwc-soft text-pwc-orange border border-pwc-border'}">${isConfirmed(g) ? '확정' : esc(statusLabel(g))}</span>
           </div>
-          <div class="flex flex-wrap gap-1">${groupReasons(members).map(t => `<span class="px-2 py-0.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print text-ink">${esc(t)}</span>`).join('')}</div>
+          <div class="flex flex-wrap gap-1">${groupReasons(members, g.deptCount).map(t => `<span class="px-2 py-0.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print text-ink">${esc(t)}</span>`).join('')}</div>
           <ul class="divide-y divide-pwc-border/60">
             ${members.map(m => `
               <li class="py-3">
@@ -1540,30 +1653,29 @@
             : `조원 모두 참석하면 확정돼요. ${fmtDateTime(groupDeadline(g))}까지 응답이 없으면 참석으로 처리돼요.`}</p>
         </div><div class="text-center pt-3"><button onclick="forgetMe()" class="apple-fine-print font-semibold text-muted hover:text-red-600 underline">이 기기에서 내 정보 지우기</button></div>`;
     }
-    function currentMe() {
-      const my = loadMy(); if (!my) return null;
-      const me = responseList.find(r => r.email.toLowerCase() === my.email.toLowerCase());
-      return me && me.code === my.code ? me : null;
+    function respondFailMsg(data, error) {
+      if (error) return '저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.';
+      return {
+        closed: '응답 마감이 지났거나 확정된 조예요.',
+        no_group: '배정된 조가 없어요.',
+        locked: '확인 코드를 여러 번 틀려서 15분 동안 잠겼어요.'
+      }[data.reason] || '이메일 또는 확인 코드가 맞지 않아요.';
     }
-    function respondAttend() {
-      const me = currentMe(); const g = me && groupOfMember(me.id); if (!g) return;
-      g.responses = g.responses || {};
-      g.responses[sid(me.id)] = 'yes';
-      saveMatchState(); lookupResult(true);
-      showToast(isConfirmed(g) ? '조원 모두 참석이에요. 조가 확정됐어요! 🎉' : '참석으로 응답했어요. 다른 조원의 응답을 기다리고 있어요.');
+    async function respondAttend() {
+      const my = loadMy(); if (!my || !myGroup) return;
+      const { data, error } = await sb.rpc('respond_attend', { p_email: my.email, p_code: my.code });
+      if (error || !data.ok) { showToast(respondFailMsg(data, error)); return lookupResult(true); }
+      await lookupResult(true);
+      showToast(myGroup && isConfirmed(myGroup) ? '조원 모두 참석이에요. 조가 확정됐어요! 🎉' : '참석으로 응답했어요. 다른 조원의 응답을 기다리고 있어요.');
     }
     async function respondPass() {
-      const me = currentMe(); const g = me && groupOfMember(me.id); if (!g) return;
+      const my = loadMy(); if (!my || !myGroup) return;
       const next = matchState.settings.autoOn ? fmtDateTime(nextScheduled()) : '다음 매칭';
       if (!await openDialog({ title: '이번 조는 패스할까요?', message: `이 조에서 빠지고, ${next} 매칭에서 다른 조를 찾아 드려요. 같은 조원과는 다시 묶이지 않아요.`, okText: '패스하기', danger: true })) return;
-      // 같은 조원 기억 (다음 매칭에서 피함)
-      me.avoid = [...new Set([...(me.avoid || []), ...g.memberIds.map(sid).filter(x => x !== sid(me.id))])];
-      saveResponses();
-      removeFromGroups(me.id);
-      // 1명만 남으면 그 사람도 매칭 대기로
-      const rest = matchState.groups.find(x => x.id === g.id);
-      if (rest && rest.memberIds.length < 2) matchState.groups = matchState.groups.filter(x => x.id !== g.id);
-      saveMatchState(); lookupResult(true);
+      // 서버 함수가 처리: 같은 조원 기억(다음 매칭에서 피함) → 조에서 빠짐 → 1명만 남으면 그 사람도 매칭 대기로
+      const { data, error } = await sb.rpc('respond_pass', { p_email: my.email, p_code: my.code });
+      if (error || !data.ok) { showToast(respondFailMsg(data, error)); return lookupResult(true); }
+      await lookupResult(true);
       showToast('패스했어요. 다음 매칭에서 다시 찾아 드릴게요.');
     }
     async function forgetMe() {
@@ -1572,6 +1684,7 @@
       document.getElementById('resultEmail').value = '';
       document.getElementById('resultCode').value = '';
       document.getElementById('resultBox').innerHTML = '';
+      myGroup = null;
       formData = emptyForm(); paintAll();
       showToast('이 기기에서 내 정보를 지웠어요.');
     }
@@ -1583,7 +1696,7 @@
     }
 
     // ===== 샘플 30명 =====
-    function addSampleData() {
+    async function addSampleData() {
       const depts = ['Audit', 'Tax', 'Deal', 'AX'];
       const names = ['김회계', '이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저'];
       const allInterests = INTERESTS.flatMap(g => g[2]);
@@ -1593,32 +1706,30 @@
       const weekdays = fullWeekDays.filter(d => !/(토|일)/.test(d));
       const pick = (arr, k, seed) => { const out = []; let s = seed; while (out.length < k) { const v = arr[(s * 7919 + 13) % arr.length]; if (!out.includes(v)) out.push(v); s++; } return out; };
       const stamp = Date.now();
+      const rows = [];
       for (let i = 1; i <= 30; i++) {
         // 평일 2~3일, 하루 안에서 연속된 3~4칸(45분~1시간)을 가능 시간으로
         const days = pick(weekdays, 2 + (i % 2), i * 3);
         const start = i % 3;
         const slots = days.flatMap(d => timeSlots15Min.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`));
-        responseList.push({
-          id: stamp + i, name: names[i % names.length] + (Math.floor(i / names.length) + 1),
+        const r = {
+          name: names[i % names.length] + (Math.floor(i / names.length) + 1),
           emailId: `sample${i}`, email: `sample${stamp % 10000}_${i}@example.com`,
           birthYear: String(1990 + (i % 12)), gender: '응답 안 함', dept: depts[i % depts.length], deptOpen: i % 3 !== 0,
           slots: sortSlots(slots), allergy: '', budget: ['무관', '1~1.5만원', '1만원 이하'][i % 3],
           foodCategories: pick(foods, 2, i * 5), spicy: ['보통', '약하게', '맵게'][i % 3], groupSizes: sizeSets[i % sizeSets.length],
           vibe: ['둘 다 좋아요', '차분하게 대화', '활기차게 대화'][i % 3], interests: pick(allInterests, 3, i * 11),
-          favoriteThing: '', code: genCode(), priority: pri[i % pri.length], createdAt: new Date().toISOString(), sample: true
-        });
+          favoriteThing: '', priority: pri[i % pri.length]
+        };
+        rows.push({ ...toDbApp(r), code: genCode(rows), sample: true });
       }
-      saveResponses();
-      renderAdmin();
-      showToast('샘플 30명을 추가했어요.');
+      await adminSave(sb.from('applications').insert(rows), '샘플 30명을 추가했어요.');
     }
 
     async function clearData() {
       if (!responseList.length) return showToast('삭제할 응답이 없어요.');
       if (await openDialog({ title: '응답 전체 삭제', message: '모든 신청 데이터와 편성 결과를 삭제할까요? 되돌릴 수 없어요.', okText: '삭제', danger: true })) {
-        responseList = []; matchState.groups = []; matchState.nextNo = 1; matchState.lastRunSummary = '';
-        saveResponses(); saveMatchState(); renderAdmin();
-        showToast('모든 응답을 삭제했어요.');
+        await adminSave(sb.rpc('admin_clear', { p_applications: true }), '모든 응답을 삭제했어요.');
       }
     }
 
@@ -1629,11 +1740,10 @@
       renderWhenGrid();
       setupInteractions();
       paintAll();
-      saveMatchState();          // 처음 접속 시 설정 기록
       updateLandingNote();
+      loadSettings().then(updateLandingNote);   // Supabase에 저장된 매칭 시각으로 안내 문구 갱신
       document.getElementById('resultCode').addEventListener('keydown', e => { if (e.key === 'Enter') lookupResult(); });
-      checkAutoMatch();          // 실행 시각이 지났으면 바로 매칭
-      setInterval(checkAutoMatch, 20000); // 열려 있는 동안 20초마다 확인
+      setInterval(checkAutoMatch, 20000); // 운영자 콘솔이 열려 있는 동안 20초마다 확인
       goToStep(0);
     });
   </script>

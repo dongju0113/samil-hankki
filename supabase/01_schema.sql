@@ -1,0 +1,540 @@
+-- =====================================================================
+-- 삼일한끼 Supabase 설정 (1/2)
+-- Supabase 대시보드 > SQL Editor > New query 에 이 파일 전체를 붙여 넣고 [Run]
+-- 여러 번 실행해도 안전합니다. (이미 있는 표·데이터는 지우지 않아요)
+-- =====================================================================
+
+create extension if not exists pgcrypto with schema extensions;
+
+-- ---------------------------------------------------------------------
+-- 1. 표
+-- ---------------------------------------------------------------------
+
+-- 운영 설정 (한 줄만 존재)
+create table if not exists public.settings (
+  id                int primary key default 1 check (id = 1),
+  auto_on           boolean     not null default true,
+  match_time        text        not null default '22:00' check (match_time ~ '^\d{2}:\d{2}$'),
+  cutoff_min        int         not null default 60 check (cutoff_min between 0 and 1440),
+  include_past      boolean     not null default false,
+  anchor            timestamptz not null default now(),
+  next_no           int         not null default 1,
+  last_run_at       timestamptz,
+  last_auto_run_at  timestamptz,
+  last_run_summary  text        not null default ''
+);
+insert into public.settings (id) values (1) on conflict (id) do nothing;
+
+-- 신청 응답 (이메일 1개당 1건)
+create table if not exists public.applications (
+  id                 uuid primary key default gen_random_uuid(),
+  email              text not null unique check (email = lower(email)),
+  code               text not null check (code ~ '^\d{6}$'),
+  name               text not null,
+  birth_year         text not null default '',
+  gender             text not null default '응답 안 함',
+  dept               text not null default '',
+  dept_open          boolean not null default false,
+  slots              text[] not null default '{}',
+  allergy            text not null default '',
+  budget             text not null default '무관',
+  food_categories    text[] not null default '{}',
+  spicy              text not null default '보통',
+  group_sizes        text[] not null default '{}',
+  vibe               text not null default '둘 다 좋아요',
+  interests          text[] not null default '{}',
+  favorite_thing     text not null default '',
+  priority           text[] not null default '{}',
+  avoid              uuid[] not null default '{}',   -- 패스했던 조의 조원 (다시 묶이지 않음)
+  sample             boolean not null default false,
+  code_fail_count    int not null default 0,          -- 확인 코드 연속 실패 횟수
+  code_locked_until  timestamptz,                     -- 10회 실패 시 15분 잠금
+  created_at         timestamptz not null default now()
+);
+
+-- 조
+create table if not exists public.groups (
+  id          uuid primary key default gen_random_uuid(),
+  no          int  not null,
+  slot        text not null,
+  locked      boolean not null default false,          -- 운영자 강제 확정
+  created_at  timestamptz not null default now()
+);
+
+-- 조원 + 참석 응답 (한 사람은 한 조에만: application_id가 기본키)
+create table if not exists public.group_members (
+  application_id  uuid primary key references public.applications(id) on delete cascade,
+  group_id        uuid not null references public.groups(id) on delete cascade,
+  response        text not null default 'pending' check (response in ('pending', 'yes')),
+  added_at        timestamptz not null default clock_timestamp()
+);
+create index if not exists group_members_group_id_idx on public.group_members (group_id);
+
+-- 운영자 목록 (Supabase 로그인 계정 중 운영자만 등록)
+create table if not exists public.admins (
+  user_id     uuid primary key references auth.users(id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------
+-- 2. 운영자 여부 확인
+-- ---------------------------------------------------------------------
+create or replace function public.is_admin()
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (select 1 from public.admins where user_id = auth.uid());
+$$;
+
+-- ---------------------------------------------------------------------
+-- 3. 보안 규칙 (RLS)
+--    - 신청자(anon): 표를 직접 읽거나 쓸 수 없음. 아래 4개 함수로만 저장·확인
+--    - 운영자(로그인 + admins 등록): 전체 조회·수정
+--    - settings는 다음 매칭 시각 안내용으로 누구나 읽기만 가능 (개인정보 없음)
+-- ---------------------------------------------------------------------
+alter table public.settings      enable row level security;
+alter table public.applications  enable row level security;
+alter table public.groups        enable row level security;
+alter table public.group_members enable row level security;
+alter table public.admins        enable row level security;
+
+revoke all on public.settings, public.applications, public.groups, public.group_members, public.admins
+  from anon, authenticated;
+grant select on public.settings to anon, authenticated;
+grant update on public.settings to authenticated;
+grant select, insert, update, delete on public.applications, public.groups, public.group_members to authenticated;
+grant select on public.admins to authenticated;
+
+drop policy if exists settings_read on public.settings;
+create policy settings_read on public.settings
+  for select to anon, authenticated using (true);
+
+drop policy if exists settings_admin_update on public.settings;
+create policy settings_admin_update on public.settings
+  for update to authenticated using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists applications_admin_all on public.applications;
+create policy applications_admin_all on public.applications
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists groups_admin_all on public.groups;
+create policy groups_admin_all on public.groups
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists group_members_admin_all on public.group_members;
+create policy group_members_admin_all on public.group_members
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists admins_read_self on public.admins;
+create policy admins_read_self on public.admins
+  for select to authenticated using (user_id = auth.uid());
+
+-- ---------------------------------------------------------------------
+-- 4. 내부 도우미 함수 (브라우저에서 직접 호출 불가)
+-- ---------------------------------------------------------------------
+
+-- "10/7(수) 12:00" → 2026-10-07 12:00 (한국 시간). 화면 코드의 EVENT_YEAR와 같게 유지
+create or replace function public._slot_ts(p_slot text)
+returns timestamptz
+language sql stable set search_path = ''
+as $$
+  select make_timestamptz(2026, (r.m)[1]::int, (r.m)[2]::int, (r.m)[3]::int, (r.m)[4]::int, 0, 'Asia/Seoul')
+  from regexp_match(p_slot, '^(\d+)/(\d+)\(.\) (\d+):(\d+)$') as r(m);
+$$;
+
+-- 응답 마감(점심 시작 N분 전)이 지났는지. 테스트 모드(include_past)면 마감 없음
+create or replace function public._deadline_passed(p_slot text)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select coalesce(
+    not s.include_past and now() >= public._slot_ts(p_slot) - make_interval(mins => s.cutoff_min),
+    true)
+  from public.settings s where s.id = 1;
+$$;
+
+-- JSON 배열 → text[]
+create or replace function public._txt_arr(p jsonb)
+returns text[]
+language sql immutable set search_path = ''
+as $$
+  select case when jsonb_typeof(p) = 'array'
+    then array(select jsonb_array_elements_text(p)) else '{}'::text[] end;
+$$;
+
+-- 이메일 + 코드 확인. {"status": "ok" | "wrong" | "locked", "id": ...}
+-- 10번 연속 틀리면 15분 동안 잠금 (코드 무작위 대입 방지)
+create or replace function public._verify_applicant(p_email text, p_code text)
+returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  a public.applications;
+begin
+  select * into a from public.applications
+   where email = lower(trim(coalesce(p_email, ''))) for update;
+  if not found then
+    return jsonb_build_object('status', 'wrong');
+  end if;
+  if a.code_locked_until is not null and a.code_locked_until > now() then
+    return jsonb_build_object('status', 'locked');
+  end if;
+  if a.code <> trim(coalesce(p_code, '')) then
+    if a.code_fail_count + 1 >= 10 then
+      update public.applications
+         set code_fail_count = 0, code_locked_until = now() + interval '15 minutes'
+       where id = a.id;
+      return jsonb_build_object('status', 'locked');
+    end if;
+    update public.applications set code_fail_count = code_fail_count + 1 where id = a.id;
+    return jsonb_build_object('status', 'wrong');
+  end if;
+  if a.code_fail_count > 0 or a.code_locked_until is not null then
+    update public.applications set code_fail_count = 0, code_locked_until = null where id = a.id;
+  end if;
+  return jsonb_build_object('status', 'ok', 'id', a.id);
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 5. 신청자용 함수 (anon key로 호출)
+-- ---------------------------------------------------------------------
+
+-- 신청 저장. 새 이메일이면 6자리 코드를 발급하고,
+-- 이미 신청한 이메일이면 기존 코드가 맞을 때만 내용을 바꾸고 기존 조에서 빠짐(다시 매칭 대기)
+create or replace function public.submit_application(p_form jsonb, p_code text default null)
+returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_email     text := lower(trim(coalesce(p_form->>'email', '')));
+  v_name      text := trim(coalesce(p_form->>'name', ''));
+  v_slots     text[] := public._txt_arr(p_form->'slots');
+  v_interests text[] := public._txt_arr(p_form->'interests');
+  a           public.applications;
+  v           jsonb;
+  v_code      text;
+  v_bytes     bytea;
+  v_old_group uuid;
+begin
+  -- 기본 검증 (화면 검증과 같은 기준 + 비정상 요청 차단)
+  if length(p_form::text) > 6000
+     or v_email !~ '^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$'
+     or length(v_name) not between 1 and 30
+     or coalesce(array_length(v_slots, 1), 0) = 0
+     or coalesce(array_length(v_interests, 1), 0) not between 1 and 3
+     or exists (select 1 from unnest(v_slots) s where s !~ '^\d+/\d+\(.\) \d{2}:\d{2}$')
+  then
+    return jsonb_build_object('ok', false, 'reason', 'invalid');
+  end if;
+
+  select * into a from public.applications where email = v_email;
+
+  if found then
+    if coalesce(trim(p_code), '') = '' then
+      return jsonb_build_object('ok', false, 'reason', 'exists');
+    end if;
+    v := public._verify_applicant(v_email, p_code);
+    if v->>'status' <> 'ok' then
+      return jsonb_build_object('ok', false, 'reason', case when v->>'status' = 'locked' then 'locked' else 'exists' end);
+    end if;
+
+    update public.applications set
+      name = v_name,
+      birth_year = coalesce(p_form->>'birth_year', ''),
+      gender = coalesce(p_form->>'gender', '응답 안 함'),
+      dept = coalesce(p_form->>'dept', ''),
+      dept_open = coalesce((p_form->>'dept_open')::boolean, false),
+      slots = v_slots,
+      allergy = coalesce(p_form->>'allergy', ''),
+      budget = coalesce(p_form->>'budget', '무관'),
+      food_categories = public._txt_arr(p_form->'food_categories'),
+      spicy = coalesce(p_form->>'spicy', '보통'),
+      group_sizes = public._txt_arr(p_form->'group_sizes'),
+      vibe = coalesce(p_form->>'vibe', '둘 다 좋아요'),
+      interests = v_interests,
+      favorite_thing = coalesce(p_form->>'favorite_thing', ''),
+      priority = public._txt_arr(p_form->'priority'),
+      created_at = now()
+    where id = a.id;
+
+    -- 새 조건으로 다시 매칭되도록 기존 조에서 빠짐 (빈 조는 삭제)
+    delete from public.group_members where application_id = a.id returning group_id into v_old_group;
+    if v_old_group is not null
+       and not exists (select 1 from public.group_members where group_id = v_old_group) then
+      delete from public.groups where id = v_old_group;
+    end if;
+
+    return jsonb_build_object('ok', true, 'code', a.code);
+  end if;
+
+  -- 새 신청: 6자리 확인 코드 발급
+  v_bytes := extensions.gen_random_bytes(3);
+  v_code := ((get_byte(v_bytes, 0) * 65536 + get_byte(v_bytes, 1) * 256 + get_byte(v_bytes, 2)) % 900000 + 100000)::text;
+
+  begin
+    insert into public.applications (
+      email, code, name, birth_year, gender, dept, dept_open, slots, allergy, budget,
+      food_categories, spicy, group_sizes, vibe, interests, favorite_thing, priority
+    ) values (
+      v_email, v_code, v_name,
+      coalesce(p_form->>'birth_year', ''),
+      coalesce(p_form->>'gender', '응답 안 함'),
+      coalesce(p_form->>'dept', ''),
+      coalesce((p_form->>'dept_open')::boolean, false),
+      v_slots,
+      coalesce(p_form->>'allergy', ''),
+      coalesce(p_form->>'budget', '무관'),
+      public._txt_arr(p_form->'food_categories'),
+      coalesce(p_form->>'spicy', '보통'),
+      public._txt_arr(p_form->'group_sizes'),
+      coalesce(p_form->>'vibe', '둘 다 좋아요'),
+      v_interests,
+      coalesce(p_form->>'favorite_thing', ''),
+      public._txt_arr(p_form->'priority')
+    );
+  exception when unique_violation then
+    return jsonb_build_object('ok', false, 'reason', 'exists');
+  end;
+
+  return jsonb_build_object('ok', true, 'code', v_code);
+end;
+$$;
+
+-- 내 결과: 이메일 + 코드가 맞을 때만 "내 정보 + 내 조"만 돌려줌 (전체 목록은 절대 안 내려감)
+create or replace function public.get_my_result(p_email text, p_code text)
+returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v          jsonb;
+  a          public.applications;
+  g          public.groups;
+  v_members  jsonb;
+  v_depts    int;
+begin
+  v := public._verify_applicant(p_email, p_code);
+  if v->>'status' <> 'ok' then
+    return jsonb_build_object('ok', false, 'locked', v->>'status' = 'locked');
+  end if;
+
+  select * into a from public.applications where id = (v->>'id')::uuid;
+  select gr.* into g from public.groups gr
+    join public.group_members gm on gm.group_id = gr.id
+   where gm.application_id = a.id;
+
+  if g.id is not null then
+    select jsonb_agg(jsonb_build_object(
+             'id', m.id,
+             'name', m.name,
+             'email', m.email,
+             'deptOpen', m.dept_open,
+             'dept', case when m.dept_open then m.dept else '' end,
+             'interests', to_jsonb(m.interests),
+             'favoriteThing', m.favorite_thing,
+             'response', gm.response
+           ) order by gm.added_at),
+           count(distinct m.dept)
+      into v_members, v_depts
+      from public.group_members gm
+      join public.applications m on m.id = gm.application_id
+     where gm.group_id = g.id;
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'me', jsonb_build_object('id', a.id, 'name', a.name, 'email', a.email,
+                             'slots', to_jsonb(a.slots), 'createdAt', a.created_at),
+    'group', case when g.id is null then null else jsonb_build_object(
+               'id', g.id, 'no', g.no, 'slot', g.slot, 'locked', g.locked,
+               'deptCount', v_depts, 'members', v_members) end
+  );
+end;
+$$;
+
+-- 참석할게요
+create or replace function public.respond_attend(p_email text, p_code text)
+returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v  jsonb;
+  g  public.groups;
+begin
+  v := public._verify_applicant(p_email, p_code);
+  if v->>'status' <> 'ok' then
+    return jsonb_build_object('ok', false, 'reason', v->>'status');
+  end if;
+  select gr.* into g from public.groups gr
+    join public.group_members gm on gm.group_id = gr.id
+   where gm.application_id = (v->>'id')::uuid
+   for update of gr;
+  if g.id is null then
+    return jsonb_build_object('ok', false, 'reason', 'no_group');
+  end if;
+  if g.locked or public._deadline_passed(g.slot) then
+    return jsonb_build_object('ok', false, 'reason', 'closed');
+  end if;
+  update public.group_members set response = 'yes' where application_id = (v->>'id')::uuid;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+-- 이번 조는 패스: 조에서 빠지고, 같은 조원은 다음 매칭에서 피함. 1명만 남으면 그 사람도 대기로
+create or replace function public.respond_pass(p_email text, p_code text)
+returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v     jsonb;
+  v_me  uuid;
+  g     public.groups;
+begin
+  v := public._verify_applicant(p_email, p_code);
+  if v->>'status' <> 'ok' then
+    return jsonb_build_object('ok', false, 'reason', v->>'status');
+  end if;
+  v_me := (v->>'id')::uuid;
+  select gr.* into g from public.groups gr
+    join public.group_members gm on gm.group_id = gr.id
+   where gm.application_id = v_me
+   for update of gr;
+  if g.id is null then
+    return jsonb_build_object('ok', false, 'reason', 'no_group');
+  end if;
+  if g.locked or public._deadline_passed(g.slot) then
+    return jsonb_build_object('ok', false, 'reason', 'closed');
+  end if;
+
+  update public.applications a
+     set avoid = array(
+       select distinct x from unnest(
+         a.avoid || array(select gm.application_id from public.group_members gm
+                           where gm.group_id = g.id and gm.application_id <> v_me)) as x)
+   where a.id = v_me;
+
+  delete from public.group_members where application_id = v_me;
+  if (select count(*) from public.group_members where group_id = g.id) < 2 then
+    delete from public.groups where id = g.id;
+  end if;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 6. 운영자용 함수 (로그인 + admins 등록된 계정만)
+-- ---------------------------------------------------------------------
+
+-- 매칭 결과 저장: 새 조(조 번호는 여기서 이어서 발급) + 기존 조 합류 + 실행 기록
+create or replace function public.admin_save_matching(
+  p_groups jsonb, p_joins jsonb, p_summary text, p_auto boolean default false)
+returns int
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_no   int;
+  v_new  int := 0;
+  g      jsonb;
+  j      jsonb;
+  v_gid  uuid;
+begin
+  if not public.is_admin() then
+    raise exception '운영자만 실행할 수 있어요.';
+  end if;
+  select next_no into v_no from public.settings where id = 1 for update;
+
+  for g in select * from jsonb_array_elements(coalesce(p_groups, '[]'::jsonb)) loop
+    insert into public.groups (no, slot) values (v_no, g->>'slot') returning id into v_gid;
+    v_no := v_no + 1;
+    v_new := v_new + 1;
+    insert into public.group_members (group_id, application_id)
+      select v_gid, t.x::uuid
+        from jsonb_array_elements_text(g->'memberIds') with ordinality as t(x, i)
+       order by t.i;
+  end loop;
+
+  for j in select * from jsonb_array_elements(coalesce(p_joins, '[]'::jsonb)) loop
+    insert into public.group_members (group_id, application_id)
+      values ((j->>'groupId')::uuid, (j->>'memberId')::uuid);
+  end loop;
+
+  update public.settings set
+    next_no = v_no,
+    last_run_at = now(),
+    last_auto_run_at = case when p_auto then now() else last_auto_run_at end,
+    last_run_summary = coalesce(p_summary, '')
+  where id = 1;
+  return v_new;
+end;
+$$;
+
+-- 조원 이동 (p_target이 null이면 매칭 대기로). 빈 조는 삭제
+create or replace function public.admin_move_member(p_app uuid, p_target uuid default null)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_old uuid;
+begin
+  if not public.is_admin() then
+    raise exception '운영자만 실행할 수 있어요.';
+  end if;
+  delete from public.group_members where application_id = p_app returning group_id into v_old;
+  if v_old is not null
+     and not exists (select 1 from public.group_members where group_id = v_old) then
+    delete from public.groups where id = v_old;
+  end if;
+  if p_target is not null then
+    insert into public.group_members (group_id, application_id) values (p_target, p_app);
+  end if;
+end;
+$$;
+
+-- 편성 결과 초기화 (p_applications = true면 신청 응답까지 전체 삭제)
+create or replace function public.admin_clear(p_applications boolean default false)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if not public.is_admin() then
+    raise exception '운영자만 실행할 수 있어요.';
+  end if;
+  delete from public.groups where true;
+  if p_applications then
+    delete from public.applications where true;
+  end if;
+  update public.settings set next_no = 1, last_run_summary = '' where id = 1;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 7. 함수 실행 권한
+-- ---------------------------------------------------------------------
+revoke execute on function
+  public.is_admin(),
+  public._slot_ts(text),
+  public._deadline_passed(text),
+  public._txt_arr(jsonb),
+  public._verify_applicant(text, text),
+  public.submit_application(jsonb, text),
+  public.get_my_result(text, text),
+  public.respond_attend(text, text),
+  public.respond_pass(text, text),
+  public.admin_save_matching(jsonb, jsonb, text, boolean),
+  public.admin_move_member(uuid, uuid),
+  public.admin_clear(boolean)
+from public, anon, authenticated;
+
+grant execute on function
+  public.submit_application(jsonb, text),
+  public.get_my_result(text, text),
+  public.respond_attend(text, text),
+  public.respond_pass(text, text)
+to anon, authenticated;
+
+grant execute on function
+  public.is_admin(),
+  public.admin_save_matching(jsonb, jsonb, text, boolean),
+  public.admin_move_member(uuid, uuid),
+  public.admin_clear(boolean)
+to authenticated;
