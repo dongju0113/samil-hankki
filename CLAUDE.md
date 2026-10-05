@@ -8,8 +8,9 @@
 3. **전체 통과일 때만** 커밋하고 `git push origin main` 한다. push하면 Vercel이 실제 사이트에 바로 배포된다.
    - 실패하면 커밋·push하지 말고, 고치거나 사용자에게 무엇이 왜 실패했는지 알린다.
    - 새 기능·버그 수정에는 `tests/`에 검사를 함께 추가한다.
-4. push 뒤 1~2분 기다려 https://samil-hankki261005.vercel.app 에서 바뀐 부분이 실제로 동작하는지 확인하고 결과를 알린다.
-5. `supabase/*.sql`을 바꿨다면, 이미 운영 중인 DB용으로 바뀐 부분만 담은 새 번호 파일(예: `04_....sql`)을 만들고 **push 전에** 사용자에게 SQL Editor 실행을 요청한다. (DB가 먼저 바뀌어야 새 코드가 동작)
+4. 화면·매칭 규칙을 바꿨다면 `python artifact/build.py`로 백업 데모도 다시 만들어 커밋하고, Artifact를 같은 주소로 재게시한다.
+5. push 뒤 1~2분 기다려 https://samil-hankki261005.vercel.app 에서 바뀐 부분이 실제로 동작하는지 확인하고 결과를 알린다.
+6. `supabase/*.sql`을 바꿨다면, 이미 운영 중인 DB용으로 바뀐 부분만 담은 새 번호 파일(예: `04_....sql`)을 만들고 **push 전에** 사용자에게 SQL Editor 실행을 요청한다. (DB가 먼저 바뀌어야 새 코드가 동작)
 
 ## 지켜야 할 것
 - 앱은 빌드 도구 없는 HTML 한 파일(`index.html`) + CDN `<script>` 구조. React·Vite·npm 빌드로 바꾸지 않는다. (`tests/package.json`은 검사용일 뿐)
@@ -29,6 +30,7 @@
 | `supabase/01~03_*.sql` | 표·RLS·함수. 사용자가 Supabase SQL Editor에서 직접 실행 |
 | `docs/` | 프로젝트 현황, Supabase·Vercel·Gmail 설정 가이드 |
 | `tests/` | 전체 검사 (`node tests/run-all.cjs`) |
+| `artifact/` | 심사용 백업 데모. `python artifact/build.py`로 `samil-hankki-demo.html` 생성 → 같은 파일을 Artifact로 재게시 (https://claude.ai/artifact/PW8QAT9sBa15ZRtxDW2mmR) |
 
 ## Vercel 환경변수 (Production)
 `SUPABASE_SECRET_KEY`, `CRON_SECRET`, `GMAIL_USER`, `GMAIL_APP_PASSWORD` — 값은 Vercel에만 있다.
