@@ -1,0 +1,1641 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>삼일한끼 - 사내 점심 네트워킹</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Apple & Inter Font Stack -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Jua&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            pwc: {
+              canvas: '#FFF8F5',
+              soft: '#FFF0EA',
+              light: '#FFE6DC',
+              orange: '#F04E23',
+              'orange-hover': '#D93E15',
+              gold: '#EB8C00',
+              border: '#FED3C4'
+            },
+            ink: '#1D1D1F',
+            muted: '#86868B',
+            hairline: '#EFEAE6'
+          },
+          boxShadow: {
+            'pwc': '0 4px 20px -2px rgba(240, 78, 35, 0.08), 0 2px 6px rgba(0,0,0,0.03)'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* 휴대폰 노치·하단 바 영역에 내용이 가리지 않도록 */
+    :root { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+    html { scroll-padding-top: env(safe-area-inset-top, 0px); background: #FFF8F5; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      background: linear-gradient(135deg, #FFFFFF 0%, #FFF8F5 50%, #FFF2EC 100%);
+      background-attachment: fixed;
+      color: #1D1D1F;
+      -webkit-font-smoothing: antialiased;
+    }
+    .apple-display-lg { font-size: 30px; font-weight: 700; line-height: 1.2; letter-spacing: -0.374px; }
+    .apple-caption-strong { font-size: 14px; font-weight: 600; letter-spacing: -0.224px; }
+    .apple-caption { font-size: 14px; font-weight: 400; letter-spacing: -0.224px; }
+    .apple-fine-print { font-size: 12px; letter-spacing: -0.12px; }
+    .apple-press:active { transform: scale(0.97); transition: transform 0.1s ease; }
+    .custom-checkbox {
+      appearance: none; -webkit-appearance: none; width: 16px; height: 16px; flex-shrink: 0;
+      border: 1px solid #FED3C4; border-radius: 4px; background: #fff center/100% no-repeat; cursor: pointer;
+    }
+    .custom-checkbox:checked {
+      background-color: #F04E23; border-color: #F04E23;
+      background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 8.586l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+    }
+    .custom-checkbox:focus-visible { outline: 3px solid #FED3C4; outline-offset: 2px; }
+    .no-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+    .no-scrollbar::-webkit-scrollbar-thumb { background: #FED3C4; border-radius: 9999px; }
+    /* 드래그 선택 중 글자 선택 방지 (입력칸은 그대로 입력 가능) */
+    .user-select-none { user-select: none; -webkit-user-select: none; }
+    input, textarea, select { user-select: text; -webkit-user-select: text; }
+    /* ===== 시작 페이지 ===== */
+    .landing-title { font-family: "Jua", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; font-size: clamp(56px, 15vw, 84px); line-height: 1; letter-spacing: -1px; color: #F04E23; }
+    .landing-kicker { font-size: 13px; font-weight: 600; color: #3F6B45; letter-spacing: -0.2px; }
+    .landing-cta { font-family: "Jua", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; font-size: clamp(24px, 6.5vw, 30px); letter-spacing: -0.3px; }
+    .steam { animation: steam 3.2s ease-in-out infinite; transform-origin: center bottom; }
+    .steam.s2 { animation-delay: .8s; } .steam.s3 { animation-delay: 1.6s; }
+    @keyframes steam { 0% { opacity: 0; transform: translateY(6px); } 40% { opacity: .9; } 100% { opacity: 0; transform: translateY(-14px); } }
+    @media (prefers-reduced-motion: reduce) { .steam { animation: none; opacity: .7; } }
+    #toast { transition: opacity .25s ease, transform .25s ease; }
+    #toast.hide { opacity: 0; transform: translate(-50%, -12px) !important; pointer-events: none; }
+  </style>
+</head>
+<body class="min-h-screen py-8 md:py-12 px-4 flex flex-col items-center">
+
+  <main class="w-full max-w-[640px] mx-auto">
+
+    <!-- 상단 글로벌 헤더 -->
+    <header class="flex items-center justify-between mb-8 pb-4 border-b border-pwc-border/60">
+      <div class="flex items-center gap-2 cursor-pointer" onclick="goToStep(0)">
+        <div class="w-4 h-4 bg-pwc-orange rounded-sm flex items-center justify-center transform -skew-x-12">
+          <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+        </div>
+        <span class="text-xl font-bold tracking-tight text-ink">삼일한끼</span>
+      </div>
+      <button onclick="requestAdminAccess()" class="px-3 py-1.5 rounded-full text-xs font-semibold text-muted hover:text-pwc-orange border border-hairline hover:border-pwc-border transition">
+        운영자 콘솔 🔒
+      </button>
+    </header>
+
+    <!-- 진행 인디케이터 (1~5단계) -->
+    <div id="surveyProgressContainer" class="mb-6">
+      <div class="flex gap-2 mb-2.5">
+        <div class="prog-segment h-1.5 flex-1 rounded-full bg-pwc-orange transition-all duration-300"></div>
+        <div class="prog-segment h-1.5 flex-1 rounded-full bg-hairline transition-all duration-300"></div>
+        <div class="prog-segment h-1.5 flex-1 rounded-full bg-hairline transition-all duration-300"></div>
+        <div class="prog-segment h-1.5 flex-1 rounded-full bg-hairline transition-all duration-300"></div>
+        <div class="prog-segment h-1.5 flex-1 rounded-full bg-hairline transition-all duration-300"></div>
+      </div>
+      <div class="flex items-center justify-between">
+        <p id="stepIndicatorLabel" class="apple-fine-print font-semibold text-muted">1 / 5단계 · 기본 정보</p>
+        <button id="returnToStep5Btn" onclick="returnToSummary()" class="hidden text-xs font-semibold text-pwc-orange hover:underline">
+          ← 5단계 요약으로 돌아가기
+        </button>
+      </div>
+    </div>
+
+    <!-- [시작 페이지] -->
+    <section id="step0" class="step-card hidden">
+      <div class="rounded-3xl overflow-hidden border border-pwc-border shadow-pwc bg-white">
+        <div class="px-6 pt-8 pb-1 text-center space-y-2">
+          <p class="landing-kicker">2026 삼일회계법인 신입 연수 스페셜</p>
+          <h1 class="landing-title">삼일한끼</h1>
+          <p class="text-sm md:text-[15px] text-muted">처음 만난 동기와, 밥 한 끼부터 같이 해요</p>
+        </div>
+
+        <!-- 직접 그린 일러스트: 감나무 아래 점심상에서 삼일회계법인 명함을 주고받는 두 신입 -->
+        <svg viewBox="0 0 640 400" class="w-full h-auto block" role="img" aria-label="감나무 아래 점심상에서 두 사람이 삼일회계법인 명함을 주고받는 일러스트">
+          <defs>
+            <linearGradient id="lgSky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E4F1F2"/>
+            </linearGradient>
+          </defs>
+          <rect width="640" height="400" fill="url(#lgSky)"/>
+          <circle cx="560" cy="62" r="30" fill="#FFE6DC"/>
+          <!-- 도심 빌딩 -->
+          <g fill="#E6DDD6">
+            <rect x="300" y="70" width="110" height="210" rx="4"/>
+            <rect x="420" y="120" width="66" height="160" rx="3"/>
+            <rect x="228" y="130" width="62" height="150" rx="3"/>
+            <rect x="500" y="150" width="56" height="130" rx="3"/>
+          </g>
+          <g fill="#F2ECE7">
+            <rect x="314" y="90" width="18" height="8"/><rect x="346" y="90" width="18" height="8"/><rect x="378" y="90" width="18" height="8"/>
+            <rect x="314" y="110" width="18" height="8"/><rect x="346" y="110" width="18" height="8"/><rect x="378" y="110" width="18" height="8"/>
+            <rect x="432" y="138" width="16" height="7"/><rect x="458" y="138" width="16" height="7"/>
+            <rect x="512" y="168" width="12" height="7"/><rect x="532" y="168" width="12" height="7"/>
+          </g>
+          <!-- 언덕 -->
+          <path d="M0 255 C110 205 210 240 320 228 C430 216 520 200 640 238 L640 400 L0 400 Z" fill="#A9C79A"/>
+          <path d="M0 300 C140 270 260 292 380 280 C480 270 560 275 640 290 L640 400 L0 400 Z" fill="#8DB57E"/>
+          <rect y="335" width="640" height="65" fill="#EADBC4"/>
+          <!-- 감나무 -->
+          <path d="M80 340 C85 285 77 235 95 180 M91 235 C112 216 130 202 156 196 M89 210 C68 196 52 178 40 158" stroke="#7A5634" stroke-width="10" fill="none" stroke-linecap="round"/>
+          <g fill="#6E9A55">
+            <circle cx="95" cy="155" r="44"/><circle cx="48" cy="146" r="32"/><circle cx="150" cy="176" r="32"/><circle cx="124" cy="120" r="30"/><circle cx="66" cy="110" r="26"/>
+          </g>
+          <g fill="#5C8746"><circle cx="112" cy="166" r="20"/><circle cx="58" cy="156" r="15"/></g>
+          <g>
+            <circle cx="78" cy="166" r="9" fill="#F04E23"/><circle cx="134" cy="146" r="9" fill="#EB8C00"/>
+            <circle cx="162" cy="190" r="8" fill="#F04E23"/><circle cx="44" cy="130" r="8" fill="#EB8C00"/>
+            <circle cx="106" cy="104" r="8" fill="#F04E23"/>
+          </g>
+
+          <!-- 왼쪽 사람: 네이비 정장 (단순한 얼굴 스타일) -->
+          <g transform="rotate(3 240 300)">
+            <path d="M192 300 C192 252 196 225 209 214 C218 207 229 204 240 204 C251 204 262 207 271 214 C284 225 288 252 288 300 Z" fill="#2B3954"/>
+            <path d="M233 184 L247 184 L247 206 L233 206 Z" fill="#E9BE9C"/>
+            <path d="M227 204 L240 242 L253 204 Z" fill="#FFFFFF"/>
+            <path d="M227 204 L233 215 L240 208 Z M253 204 L247 215 L240 208 Z" fill="#F4F4F4" stroke="#DADADA" stroke-width=".8"/>
+            <path d="M236.5 209 L243.5 209 L242.3 215 L237.7 215 Z" fill="#C93A14"/>
+            <path d="M237.7 215 L242.3 215 L245 238 L240 245 L235 238 Z" fill="#F04E23"/>
+            <path d="M227 204 L218 215 L229 226 L223 232 L240 266 L240 246 Z" fill="#22304A"/>
+            <path d="M253 204 L262 215 L251 226 L257 232 L240 266 L240 246 Z" fill="#22304A"/>
+            <circle cx="240" cy="278" r="2" fill="#18223A"/><circle cx="240" cy="291" r="2" fill="#18223A"/>
+            <circle cx="217" cy="168" r="5.5" fill="#F0C4A0"/><circle cx="263" cy="168" r="5.5" fill="#F0C4A0"/>
+            <circle cx="240" cy="168" r="23" fill="#F6D2B3"/>
+            <path d="M215 167 C211 143 226 133 243 133 C261 133 271 146 266 166 C263 157 256 152 248 150 C239 155 226 154 218 160 Z" fill="#2A211C"/>
+            <path d="M229 171 q3 -3.5 6 0 M245 171 q3 -3.5 6 0" stroke="#4A3428" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <circle cx="226" cy="179" r="3.2" fill="#F5A88E" opacity=".55"/><circle cx="254" cy="179" r="3.2" fill="#F5A88E" opacity=".55"/>
+            <path d="M206 227 C198 258 222 270 262 266" stroke="#22304A" stroke-width="17" fill="none" stroke-linecap="round"/>
+            <path d="M276 219 C292 230 300 243 306 254" stroke="#2B3954" stroke-width="17" fill="none" stroke-linecap="round"/>
+            <path d="M262 266 L270 265.5" stroke="#FFFFFF" stroke-width="14"/>
+            <path d="M305 252 L310 261" stroke="#FFFFFF" stroke-width="14"/>
+          </g>
+          <!-- 오른쪽 사람: 어깨 길이 머리, 차콜 정장 (단순한 얼굴 스타일) -->
+          <g transform="rotate(-3 400 300)">
+            <path d="M374 172 C371 147 385 137 400 137 C415 137 429 147 426 172 L429 203 C429 209 422 211 417 206 L383 206 C378 211 371 209 371 203 Z" fill="#3A2A22"/>
+            <path d="M352 300 C352 252 356 225 369 214 C378 207 389 204 400 204 C411 204 422 207 431 214 C444 225 448 252 448 300 Z" fill="#3F4450"/>
+            <path d="M393 184 L407 184 L407 206 L393 206 Z" fill="#E9BE9C"/>
+            <path d="M387 204 Q400 222 413 204 L413 250 L387 250 Z" fill="#FFFFFF"/>
+            <path d="M387 204 L378 215 L389 226 L383 232 L400 270 L392 226 Z" fill="#353A45"/>
+            <path d="M413 204 L422 215 L411 226 L417 232 L400 270 L408 226 Z" fill="#353A45"/>
+            <circle cx="400" cy="282" r="2" fill="#2A2E37"/>
+            <circle cx="400" cy="168" r="23" fill="#F6D2B3"/>
+            <path d="M377 167 C375 149 387 140 401 140 C415 140 425 149 424 166 C419 154 410 149 403 149 C395 155 386 161 377 167 Z" fill="#3A2A22"/>
+            <path d="M378 160 C375 174 376 190 380 203 L385 202 C382 190 381 174 382 162 Z" fill="#3A2A22"/>
+            <path d="M422 160 C425 174 424 190 420 203 L415 202 C418 190 419 174 418 162 Z" fill="#3A2A22"/>
+            <path d="M389 171 q3 -3.5 6 0 M405 171 q3 -3.5 6 0" stroke="#4A3428" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <circle cx="386" cy="179" r="3.2" fill="#F5A88E" opacity=".55"/><circle cx="414" cy="179" r="3.2" fill="#F5A88E" opacity=".55"/>
+            <path d="M434 227 C442 258 418 270 378 266" stroke="#353A45" stroke-width="17" fill="none" stroke-linecap="round"/>
+            <path d="M364 219 C348 230 340 243 334 254" stroke="#3F4450" stroke-width="17" fill="none" stroke-linecap="round"/>
+            <path d="M378 266 L370 265.5" stroke="#FFFFFF" stroke-width="14"/>
+            <path d="M335 252 L330 261" stroke="#FFFFFF" stroke-width="14"/>
+          </g>
+          <!-- 두 손으로 주고받는 명함 -->
+          <g transform="rotate(-6 297 252)">
+            <rect x="269" y="236" width="56" height="32" rx="3" fill="#FFFFFF" stroke="#E5D7C6"/>
+            <rect x="269" y="236" width="5" height="32" rx="1" fill="#F04E23"/>
+            <text x="279" y="249" font-size="7.5" font-weight="700" fill="#1D1D1F" font-family="Apple SD Gothic Neo, Malgun Gothic, sans-serif">삼일회계법인</text>
+            <rect x="279" y="255" width="30" height="2.5" rx="1" fill="#D9D3CE"/><rect x="279" y="260" width="20" height="2.5" rx="1" fill="#D9D3CE"/>
+          </g>
+          <g transform="rotate(6 355 248)">
+            <rect x="327" y="232" width="56" height="32" rx="3" fill="#FFFFFF" stroke="#E5D7C6"/>
+            <rect x="327" y="232" width="5" height="32" rx="1" fill="#F04E23"/>
+            <text x="337" y="245" font-size="7.5" font-weight="700" fill="#1D1D1F" font-family="Apple SD Gothic Neo, Malgun Gothic, sans-serif">삼일회계법인</text>
+            <rect x="337" y="251" width="30" height="2.5" rx="1" fill="#D9D3CE"/><rect x="337" y="256" width="20" height="2.5" rx="1" fill="#D9D3CE"/>
+          </g>
+          <g fill="#F6D2B3">
+            <ellipse cx="275" cy="267" rx="8" ry="6.5"/><ellipse cx="320" cy="263" rx="8" ry="6.5"/>
+            <ellipse cx="331" cy="261" rx="8" ry="6.5"/><ellipse cx="380" cy="265" rx="8" ry="6.5"/>
+            <ellipse cx="279" cy="259" rx="3" ry="5" transform="rotate(-20 279 259)"/><ellipse cx="316" cy="255" rx="3" ry="5" transform="rotate(20 316 255)"/>
+            <ellipse cx="335" cy="253" rx="3" ry="5" transform="rotate(-20 335 253)"/><ellipse cx="376" cy="257" rx="3" ry="5" transform="rotate(20 376 257)"/>
+          </g>
+
+          <!-- 평상 -->
+          <path d="M150 300 L520 300 L560 340 L110 340 Z" fill="#D2A36B"/>
+          <rect x="110" y="340" width="450" height="12" fill="#A9783F"/>
+          <rect x="128" y="352" width="12" height="34" fill="#8C6233"/><rect x="530" y="352" width="12" height="34" fill="#8C6233"/>
+          <g stroke="#C08F57" stroke-width="2"><line x1="200" y1="300" x2="180" y2="340"/><line x1="300" y1="300" x2="290" y2="340"/><line x1="400" y1="300" x2="400" y2="340"/><line x1="480" y1="300" x2="500" y2="340"/></g>
+          <!-- 노란 양은 주전자 -->
+          <g>
+            <path d="M150 312 Q148 288 172 286 Q196 288 194 312 Z" fill="#F2C14E"/>
+            <ellipse cx="172" cy="286" rx="14" ry="4" fill="#E0AC35"/><circle cx="172" cy="281" r="3.5" fill="#E0AC35"/>
+            <path d="M193 300 L210 288" stroke="#F2C14E" stroke-width="6" stroke-linecap="round"/>
+            <path d="M158 288 Q172 268 186 288" stroke="#B88A2A" stroke-width="2.5" fill="none"/>
+          </g>
+          <!-- 계란말이 접시 -->
+          <ellipse cx="236" cy="322" rx="28" ry="8" fill="#FFFFFF" stroke="#E5D7C6"/>
+          <g fill="#F7D35C" stroke="#E8B93A" stroke-width="1.2"><rect x="216" y="312" width="12" height="9" rx="2"/><rect x="230" y="312" width="12" height="9" rx="2"/><rect x="244" y="312" width="12" height="9" rx="2"/></g>
+          <!-- 밥그릇 두 개 -->
+          <path d="M290 314 C292 332 334 332 336 314 Z" fill="#FFFFFF" stroke="#E5D7C6"/><ellipse cx="313" cy="313" rx="23" ry="6.5" fill="#FFFDF8"/>
+          <path d="M352 314 C354 332 396 332 398 314 Z" fill="#FFFFFF" stroke="#E5D7C6"/><ellipse cx="375" cy="313" rx="23" ry="6.5" fill="#FFFDF8"/>
+          <g stroke="#8C8C90" stroke-width="3" stroke-linecap="round"><line x1="340" y1="334" x2="348" y2="306"/><line x1="345" y1="335" x2="353" y2="307"/></g>
+          <!-- 생선구이 -->
+          <ellipse cx="420" cy="326" rx="30" ry="8" fill="#FFFFFF" stroke="#E5D7C6"/>
+          <path d="M398 322 Q414 312 432 322 Q414 330 398 322 Z M432 322 L442 315 L442 329 Z" fill="#C98A4B"/>
+          <!-- 가마솥 + 김 -->
+          <path class="steam" d="M478 254 C470 242 486 234 478 220" stroke="#FFFFFF" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <path class="steam s2" d="M494 250 C486 236 502 228 494 212" stroke="#FFFFFF" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <path class="steam s3" d="M510 254 C502 242 518 234 510 220" stroke="#FFFFFF" stroke-width="5" fill="none" stroke-linecap="round"/>
+          <ellipse cx="494" cy="276" rx="44" ry="9" fill="#3A3A3C"/>
+          <path d="M454 276 C456 304 532 304 534 276 Z" fill="#4A4A4D"/>
+          <ellipse cx="494" cy="267" rx="34" ry="7" fill="#5B5B5F"/>
+          <rect x="487" y="256" width="14" height="9" rx="3" fill="#3A3A3C"/>
+          <!-- 바닥: 감 바구니와 낙엽 -->
+          <path d="M578 360 L620 360 L612 386 L586 386 Z" fill="#B98B52"/>
+          <g><circle cx="588" cy="355" r="8" fill="#F04E23"/><circle cx="602" cy="352" r="8" fill="#EB8C00"/><circle cx="614" cy="356" r="7" fill="#F04E23"/></g>
+          <g fill="#D9772F" opacity=".8"><ellipse cx="40" cy="372" rx="8" ry="4" transform="rotate(-20 40 372)"/><ellipse cx="200" cy="384" rx="7" ry="3.5" transform="rotate(25 200 384)"/><ellipse cx="455" cy="378" rx="7" ry="3.5" transform="rotate(-15 455 378)"/></g>
+        </svg>
+
+        <div class="px-6 pb-8 pt-5 space-y-4">
+          <button onclick="goToStep(1)" class="apple-press landing-cta w-full py-5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white shadow-sm transition">점심 한끼 함께해요!</button>
+          <button onclick="goToStep(7)" class="apple-press w-full py-3.5 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption-strong transition">내 결과 확인하기</button>
+          <p id="landingNote" class="text-center apple-fine-print text-muted">신청은 2분이면 끝나요.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- [1단계] 기본 정보 -->
+    <section id="step1" class="step-card space-y-6">
+      <div class="space-y-2">
+        <h1 class="apple-display-lg text-ink">처음 만나는 동료와<br><span class="text-pwc-orange">편하게 점심 한 끼</span></h1>
+        <p class="text-sm md:text-[15px] text-muted">일정과 관심사가 맞는 동료를 묶어 드립니다. 질문은 5단계, 2분이면 끝나요.</p>
+      </div>
+
+      <div class="p-4 md:p-5 bg-pwc-soft/80 border border-pwc-border rounded-2xl relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-pwc-orange"></div>
+        <h3 class="apple-caption-strong text-ink mb-1.5">정보는 이렇게 사용됩니다.</h3>
+        <ul class="apple-caption text-ink space-y-1">
+          <li>• <span class="font-semibold">조원에게 공유:</span> 이름, 이메일, 관심사, 요즘 빠져 있는 것</li>
+          <li>• <span class="font-semibold">매칭에만 사용(공유 안 함):</span> 출생연도, 성별, 나이·구성 선호, 예산</li>
+          <li>• 소속 부문은 아래에서 공개 여부를 직접 고를 수 있어요.</li>
+        </ul>
+      </div>
+
+      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-5">
+        <div>
+          <label for="inputName" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
+            이름 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
+          </label>
+          <input type="text" id="inputName" placeholder="예: 홍길동" autocomplete="name" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label for="selectBirthYear" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
+              출생연도 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-muted rounded-md border border-pwc-border">선택</span>
+            </label>
+            <select id="selectBirthYear" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl apple-caption text-ink focus:outline-none focus:border-pwc-orange transition cursor-pointer">
+              <option value="">선택 안 함</option>
+            </select>
+          </div>
+          <div>
+            <label for="selectGender" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
+              성별 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-muted rounded-md border border-pwc-border">선택</span>
+            </label>
+            <select id="selectGender" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl apple-caption text-ink focus:outline-none focus:border-pwc-orange transition cursor-pointer">
+              <option>응답 안 함</option>
+              <option>남성</option>
+              <option>여성</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label for="inputEmail" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">
+            이메일 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
+          </label>
+          <p class="apple-fine-print text-muted mb-2">매칭 결과를 확인할 때 쓰는 이메일 주소 (@ 앞부분 입력 후 도메인 선택)</p>
+          <div id="emailBox" class="flex items-center w-full bg-pwc-canvas/60 border border-pwc-border rounded-xl focus-within:border-pwc-orange focus-within:bg-white transition overflow-hidden">
+            <input type="text" id="inputEmail" placeholder="gildong.hong" autocomplete="off" autocapitalize="off" spellcheck="false" class="flex-1 min-w-0 px-4 py-3 bg-transparent text-ink text-sm focus:outline-none">
+            <span class="pl-1 py-3 text-muted text-sm font-medium select-none">@</span>
+            <select id="selectEmailDomain" aria-label="이메일 도메인" class="pr-3 pl-1 py-3 bg-transparent text-ink text-sm font-medium focus:outline-none cursor-pointer"></select>
+          </div>
+        </div>
+
+        <div>
+          <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
+            소속 부문·본부 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
+          </label>
+          <div class="grid grid-cols-4 p-1 bg-pwc-soft rounded-xl border border-pwc-border gap-1" id="deptSegmentGroup">
+            <button type="button" class="dept-seg-btn" data-val="Audit">Audit</button>
+            <button type="button" class="dept-seg-btn" data-val="Tax">Tax</button>
+            <button type="button" class="dept-seg-btn" data-val="Deal">Deal</button>
+            <button type="button" class="dept-seg-btn" data-val="AX">AX</button>
+          </div>
+        </div>
+
+        <label class="flex items-center gap-2.5 pt-2 cursor-pointer select-none">
+          <input type="checkbox" id="checkDeptOpen" class="custom-checkbox">
+          <span class="apple-caption text-ink">조원에게 내 소속 부문을 공개해도 괜찮아요</span>
+        </label>
+      </div>
+
+      <div class="flex items-center justify-between pt-4">
+        <button disabled class="px-6 py-3 rounded-full apple-caption font-semibold text-muted/40 cursor-not-allowed bg-transparent">이전</button>
+        <button onclick="handleNextStep(1)" class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">다음</button>
+      </div>
+    </section>
+
+    <!-- [2단계] 일정 선택 -->
+    <section id="step2" class="step-card space-y-6 hidden">
+      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-6">
+        <div>
+          <div class="flex items-center justify-between mb-1 gap-2">
+            <label class="flex items-center gap-1.5 apple-caption-strong text-ink">
+              가능한 날짜 & 시간 선택
+              <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
+            </label>
+            <span id="selectedSlotsCount" class="text-xs font-semibold text-pwc-orange whitespace-nowrap">0개 슬롯 선택됨</span>
+          </div>
+          <p class="apple-fine-print text-muted mb-1">PC에서는 마우스를 누른 채 드래그하면 여러 칸을 한 번에, 휴대폰에서는 칸을 하나씩 눌러 선택해요.</p>
+          <p class="apple-fine-print text-muted mb-3.5">표시된 시간은 점심 <b class="text-ink">시작 시각</b>이에요. 가능한 시작 시각을 모두 골라 주세요.</p>
+
+          <div id="gridScrollContainer" class="overflow-x-auto overflow-y-auto max-h-[400px] no-scrollbar border border-pwc-border rounded-xl bg-pwc-canvas/30 p-2 user-select-none">
+            <div class="min-w-[840px]">
+              <table id="whenTable" class="w-full text-center text-xs border-collapse">
+                <thead class="sticky top-0 bg-pwc-soft z-20">
+                  <tr id="whenHeadRow" class="text-muted font-semibold border-b border-pwc-border shadow-sm">
+                    <th class="py-2.5 px-2 text-left pl-3 w-16 bg-pwc-soft sticky left-0 z-30">시간</th>
+                  </tr>
+                </thead>
+                <tbody id="whenGridBody" class="divide-y divide-pwc-border/60"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="flex justify-end mt-2">
+            <button type="button" onclick="clearSlots()" class="text-xs font-semibold text-muted hover:text-pwc-orange">선택 모두 지우기</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-4">
+        <button onclick="goToStep(1)" class="apple-press px-6 py-3 rounded-full border border-pwc-border apple-caption font-semibold text-ink bg-white hover:bg-pwc-soft transition">이전</button>
+        <button onclick="handleNextStep(2)" class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">다음</button>
+      </div>
+    </section>
+
+    <!-- [3단계] 음식 취향 및 식사/모임 조건 -->
+    <section id="step3" class="step-card space-y-6 hidden">
+      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-6">
+        <div>
+          <label class="block apple-caption-strong text-ink mb-2">선호 음식 카테고리 (복수 선택 가능)</label>
+          <div class="flex flex-wrap gap-2" id="foodCategoryGroup">
+            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="한식">한식</button>
+            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="일식">일식</button>
+            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="중식">중식</button>
+            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="아시안">아시안</button>
+            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="양식">양식</button>
+            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="분식">분식</button>
+            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="샐러드">샐러드</button>
+            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="고기">고기</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block apple-caption-strong text-ink mb-2">매운맛 선호도</label>
+          <div class="flex gap-2" id="spicyGroup">
+            <button type="button" class="spicy-btn flex-1 py-2 rounded-xl border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="약하게">약하게</button>
+            <button type="button" class="spicy-btn flex-1 py-2 rounded-xl border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="보통">보통</button>
+            <button type="button" class="spicy-btn flex-1 py-2 rounded-xl border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="맵게">맵게</button>
+          </div>
+        </div>
+
+        <div class="pt-2">
+          <label for="inputAllergy" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
+            못 먹는 음식·알레르기 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-muted rounded-md border border-pwc-border">선택</span>
+          </label>
+          <input type="text" id="inputAllergy" placeholder="예: 갑각류 알레르기, 오이 등" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+        </div>
+
+        <div>
+          <label class="block apple-caption-strong text-ink mb-2">1인 식사 예산</label>
+          <div class="flex flex-wrap gap-2" id="budgetPillGroup">
+            <button type="button" class="apple-press budget-pill px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="1만원 이하">1만원 이하</button>
+            <button type="button" class="apple-press budget-pill px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="1~1.5만원">1~1.5만원</button>
+            <button type="button" class="apple-press budget-pill px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="1.5만원 이상">1.5만원 이상</button>
+            <button type="button" class="apple-press budget-pill px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="무관">무관</button>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-pwc-border/60 mt-4">
+          <div class="flex items-center justify-between mb-1 mt-4 gap-2">
+            <label class="block apple-caption-strong text-ink">희망 인원 (중복 체크 가능)</label>
+            <span class="text-xs text-muted text-right">원하는 규모를 모두 선택하세요</span>
+          </div>
+          <div class="flex gap-2 mt-2" id="groupSizeGroup">
+            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="2명">2명</button>
+            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="3~4명">3~4명</button>
+            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="5명~">5명~</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block apple-caption-strong text-ink mb-2">어떤 자리가 편하세요?</label>
+          <div class="flex flex-wrap gap-2" id="vibeGroup">
+            <button type="button" class="apple-press vibe-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="차분하게 대화">차분하게 대화</button>
+            <button type="button" class="apple-press vibe-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="활기차게 대화">활기차게 대화</button>
+            <button type="button" class="apple-press vibe-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="둘 다 좋아요">둘 다 좋아요</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-4">
+        <button onclick="goToStep(2)" class="apple-press px-6 py-3 rounded-full border border-pwc-border apple-caption font-semibold text-ink bg-white hover:bg-pwc-soft transition">이전</button>
+        <button onclick="handleNextStep(3)" class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">다음</button>
+      </div>
+    </section>
+
+    <!-- [4단계] 이야기거리 & 우선 조건 -->
+    <section id="step4" class="step-card space-y-6 hidden">
+      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-6">
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="apple-caption-strong text-ink">
+              관심사 <span id="interestCountBadge" class="text-pwc-orange font-semibold">0/3</span>
+              <span class="ml-1 px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
+            </label>
+          </div>
+          <p class="apple-fine-print text-muted mb-4">최대 3개까지 골라 주세요. 첫 만남 대화 주제로 쓰여요.</p>
+          <div class="space-y-4" id="interestGroups"></div>
+        </div>
+
+        <div>
+          <label for="inputFavoriteThing" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">
+            요즘 빠져 있는 것 하나 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-muted rounded-md border border-pwc-border">선택</span>
+          </label>
+          <p class="apple-fine-print text-muted mb-2">'러닝'보다 '주말 한강 러닝 10km'처럼 구체적일수록 좋아요.</p>
+          <input type="text" id="inputFavoriteThing" placeholder="예: 주말마다 스크린골프, 한강 러닝" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl apple-caption text-ink focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+        </div>
+
+        <div class="pt-4 border-t border-pwc-border/70">
+          <div class="flex items-center justify-between mb-1">
+            <label class="apple-caption-strong text-ink">가장 중요하게 맞췄으면 하는 조건</label>
+            <span id="priorityCountBadge" class="apple-caption-strong text-pwc-orange">0/2</span>
+          </div>
+          <p class="apple-fine-print text-muted mb-3">최대 2개. 조건이 충돌하면 먼저 고른 조건을 우선 반영해요.</p>
+          <div class="flex flex-wrap gap-2" id="priorityGroup">
+            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="다른 부문">다른 부문</button>
+            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="같은 부문">같은 부문</button>
+            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="나이대">나이대</button>
+            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="음식 취향">음식 취향</button>
+            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="관심사">관심사</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-4">
+        <button onclick="goToStep(3)" class="apple-press px-6 py-3 rounded-full border border-pwc-border apple-caption font-semibold text-ink bg-white hover:bg-pwc-soft transition">이전</button>
+        <button onclick="handleNextStep(4)" class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">다음</button>
+      </div>
+    </section>
+
+    <!-- [5단계] 확인 및 제출 -->
+    <section id="step5" class="step-card space-y-6 hidden">
+      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-5">
+        <div class="border-b border-pwc-border pb-2.5 mb-1 flex items-center justify-between gap-3">
+          <h2 class="apple-caption-strong text-ink text-base whitespace-nowrap">최종 입력 확인</h2>
+          <span class="text-xs text-muted text-right">[수정]을 누르면 해당 화면으로 이동해요</span>
+        </div>
+
+        <div class="divide-y divide-pwc-border/60 apple-caption">
+          <div class="py-2.5 flex items-center justify-between gap-3">
+            <div class="min-w-0"><span class="text-muted block text-xs">이름 / 출생 / 성별 / 이메일</span><span id="sumNameContact" class="font-semibold text-ink break-all">-</span></div>
+            <button onclick="jumpToEdit(1)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
+          </div>
+          <div class="py-2.5 flex items-center justify-between gap-3">
+            <div class="min-w-0"><span class="text-muted block text-xs">소속 본부</span><span id="sumDept" class="font-semibold text-ink">-</span></div>
+            <button onclick="jumpToEdit(1)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
+          </div>
+          <div class="py-2.5 flex items-center justify-between gap-3">
+            <div class="min-w-0"><span class="text-muted block text-xs">가능 일정 및 시간 슬롯</span><span id="sumSlots" class="font-semibold text-pwc-orange block">-</span></div>
+            <button onclick="jumpToEdit(2)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
+          </div>
+          <div class="py-2.5 flex items-center justify-between gap-3">
+            <div class="min-w-0"><span class="text-muted block text-xs">선호 음식 / 매운맛 / 알레르기 / 예산</span><span id="sumFood" class="font-semibold text-ink">-</span></div>
+            <button onclick="jumpToEdit(3)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
+          </div>
+          <div class="py-2.5 flex items-center justify-between gap-3">
+            <div class="min-w-0"><span class="text-muted block text-xs">희망 인원 / 자리 분위기</span><span id="sumGroupAndVibe" class="font-semibold text-ink">-</span></div>
+            <button onclick="jumpToEdit(3)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
+          </div>
+          <div class="py-2.5 flex items-center justify-between gap-3">
+            <div class="min-w-0"><span class="text-muted block text-xs">관심사 / 요즘 빠진 것</span><span id="sumInterests" class="font-semibold text-ink block">-</span></div>
+            <button onclick="jumpToEdit(4)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
+          </div>
+          <div class="py-2.5 flex items-center justify-between gap-3">
+            <div class="min-w-0"><span class="text-muted block text-xs">우선 매칭 조건</span><span id="sumPriority" class="font-semibold text-pwc-orange">-</span></div>
+            <button onclick="jumpToEdit(4)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
+          </div>
+        </div>
+
+        <label class="flex items-start gap-2.5 pt-3 border-t border-pwc-border cursor-pointer select-none">
+          <input type="checkbox" id="checkFinalConsent" class="custom-checkbox mt-1">
+          <span class="apple-caption text-ink leading-relaxed">위 안내대로 정보가 매칭에 쓰이고, 이름·이메일·관심사가 조원에게 공유되는 것에 동의합니다.</span>
+        </label>
+      </div>
+
+      <div class="flex items-center justify-between pt-4">
+        <button onclick="goToStep(4)" class="apple-press px-6 py-3 rounded-full border border-pwc-border apple-caption font-semibold text-ink bg-white hover:bg-pwc-soft transition">이전</button>
+        <button id="submitBtn" onclick="finishApplication()" disabled class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition disabled:bg-hairline disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed">신청하기</button>
+      </div>
+    </section>
+
+    <!-- [신청 완료 화면] -->
+    <section id="stepCompleted" class="step-card space-y-6 hidden text-center">
+      <div class="bg-white p-8 md:p-10 rounded-3xl border border-pwc-border/70 shadow-pwc space-y-5">
+        <div class="w-16 h-16 bg-pwc-soft text-pwc-orange rounded-full flex items-center justify-center mx-auto text-3xl">🎉</div>
+        <h2 class="apple-display-lg text-ink text-2xl">신청이 완료되었어요!</h2>
+        <p class="text-sm text-muted leading-relaxed max-w-md mx-auto">
+          매일 <span class="font-semibold text-ink" id="completedTime">22:00</span>에 아직 조가 없는 신청자끼리 자동으로 조를 짜 드려요.<br>
+          결과는 이 웹앱의 <span class="font-semibold text-ink">내 결과 확인</span>에서 볼 수 있어요.
+        </p>
+        <div class="p-5 rounded-2xl bg-pwc-soft border border-pwc-border space-y-1">
+          <div class="apple-fine-print font-semibold text-muted">내 결과 확인 코드</div>
+          <div id="confirmedCode" class="text-4xl font-bold tracking-[0.3em] text-pwc-orange pl-[0.3em]">------</div>
+          <div class="apple-fine-print text-muted"><span id="confirmedEmail" class="break-all">-</span><br>이 기기에서는 자동으로 기억돼요.<br><b class="text-ink">다른 기기에서 볼 때 필요하니 화면을 캡처해 두세요.</b></div>
+        </div>
+        <div class="space-y-2">
+          <button onclick="goToStep(7)" class="apple-press w-full py-3.5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong transition">내 결과 확인하기</button>
+          <button onclick="goHome()" class="w-full py-3 rounded-full bg-white border border-pwc-border hover:bg-pwc-soft text-ink apple-caption font-semibold transition">처음 화면으로</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- [내 결과 확인] -->
+    <section id="step7" class="step-card space-y-6 hidden">
+      <div class="space-y-1.5">
+        <h1 class="apple-display-lg text-ink text-2xl">내 매칭 결과</h1>
+        <p class="text-sm text-muted">신청할 때 쓴 이메일과 결과 확인 코드(6자리)를 입력해 주세요.</p>
+      </div>
+      <div class="bg-white p-6 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-4">
+        <div>
+          <label for="resultEmail" class="block apple-caption-strong text-ink mb-2">이메일</label>
+          <input id="resultEmail" type="email" placeholder="gildong.hong@naver.com" autocomplete="email" autocapitalize="off" spellcheck="false" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+        </div>
+        <div>
+          <label for="resultCode" class="block apple-caption-strong text-ink mb-2">결과 확인 코드</label>
+          <input id="resultCode" type="text" inputmode="numeric" maxlength="6" placeholder="6자리 숫자" autocomplete="off" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm tracking-widest focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+        </div>
+        <button onclick="lookupResult()" class="apple-press w-full py-3.5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong transition">결과 보기</button>
+      </div>
+      <div id="resultBox"></div>
+      <div class="text-center">
+        <button onclick="goHome()" class="text-xs font-semibold text-muted hover:text-pwc-orange">← 처음 화면으로</button>
+      </div>
+    </section>
+
+    <!-- [6단계] 운영자 대시보드 -->
+    <section id="step6" class="step-card space-y-6 hidden">
+      <div class="space-y-1.5">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-pwc-soft text-pwc-orange border border-pwc-border">Admin</span>
+            <h1 class="apple-display-lg text-ink text-2xl">매칭 운영 대시보드</h1>
+          </div>
+          <button onclick="exitAdmin()" class="text-xs font-semibold text-muted hover:text-ink">일반 모드로 나가기 ✕</button>
+        </div>
+        <p class="text-muted text-sm">정해진 시각마다 아직 조가 없는 신청자끼리 자동으로 조를 짜요. 조원이 각자 참석·패스를 고르고, 필요할 때만 운영자가 옮기거나 강제 확정해요.</p>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-white p-4 rounded-2xl border border-pwc-border shadow-pwc text-center">
+          <div id="kpiCount" class="text-3xl font-bold tracking-tight text-ink">0</div>
+          <div class="apple-fine-print text-muted mt-0.5">신청자</div>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-pwc-border shadow-pwc text-center">
+          <div id="kpiGroups" class="text-3xl font-bold tracking-tight text-pwc-orange">0</div>
+          <div class="apple-fine-print text-muted mt-0.5">편성된 조</div>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-pwc-border shadow-pwc text-center">
+          <div id="kpiWaiting" class="text-3xl font-bold tracking-tight text-ink">0</div>
+          <div class="apple-fine-print text-muted mt-0.5">매칭 대기</div>
+        </div>
+      </div>
+
+      <!-- 자동 매칭 설정 -->
+      <div class="bg-white p-5 rounded-2xl border border-pwc-border shadow-pwc space-y-4">
+        <h3 class="apple-caption-strong text-ink">자동 매칭 설정</h3>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="setAutoOn" class="custom-checkbox">
+            <span class="apple-caption text-ink">매일 자동 매칭</span>
+          </label>
+          <label class="flex items-center gap-2">
+            <span class="apple-caption text-muted">실행 시각</span>
+            <input type="time" id="setTime" class="px-3 py-2 bg-pwc-canvas/60 border border-pwc-border rounded-lg text-sm text-ink focus:outline-none focus:border-pwc-orange">
+          </label>
+          <label class="flex items-center gap-2">
+            <span class="apple-caption text-muted">점심 시작</span>
+            <input type="number" id="setCutoff" min="0" max="1440" step="10" class="w-20 px-3 py-2 bg-pwc-canvas/60 border border-pwc-border rounded-lg text-sm text-ink focus:outline-none focus:border-pwc-orange">
+            <span class="apple-caption text-muted">분 전 마감</span>
+          </label>
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="setIncludePast" class="custom-checkbox">
+          <span class="apple-caption text-ink">지난 시간대도 매칭하기 <span class="text-muted">(테스트용)</span></span>
+        </label>
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-pwc-border/60">
+          <p id="autoStatus" class="apple-fine-print text-muted pt-3"></p>
+          <button onclick="saveSettings()" class="apple-press mt-2 px-5 py-2 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">설정 저장</button>
+        </div>
+        <p class="apple-fine-print text-muted bg-pwc-canvas rounded-lg p-3">데모 모드: 지금은 응답이 이 브라우저에만 저장되고, 웹앱이 열려 있을 때 실행 시각이 지나면 매칭이 돌아가요. Supabase를 연결하면 서버가 매일 자동으로 실행해요.</p>
+      </div>
+
+      <div class="flex flex-wrap gap-2.5">
+        <button onclick="runMatching('manual')" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">지금 매칭 실행</button>
+        <button onclick="addSampleData()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">샘플 30명 추가</button>
+        <button onclick="resetGroups()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">편성 결과 초기화</button>
+        <button onclick="clearData()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full border border-red-200 bg-white hover:bg-red-50 text-red-600 apple-caption font-semibold transition">응답 전체 삭제</button>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-pwc-border shadow-pwc overflow-hidden">
+        <div class="p-4 border-b border-pwc-border space-y-3">
+          <h3 class="apple-caption-strong text-ink">신청 현황 데이터 · 확인 코드 찾기</h3>
+          <input id="adminSearch" type="search" oninput="renderAdminTable()" placeholder="이름 또는 이메일로 검색 (예: 홍길동)" autocomplete="off" class="w-full px-4 py-2.5 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+          <p class="apple-fine-print text-muted">코드를 잊은 신청자는 본인 확인(이름·이메일) 후 아래 코드를 알려 주세요.</p>
+        </div>
+        <div class="overflow-auto max-h-[420px]">
+          <table class="w-full text-left apple-fine-print">
+            <thead class="sticky top-0 bg-pwc-soft text-muted font-semibold border-b border-pwc-border">
+              <tr>
+                <th class="py-3 px-3 whitespace-nowrap">이름</th>
+                <th class="py-3 px-3 whitespace-nowrap">상태</th>
+                <th class="py-3 px-3 whitespace-nowrap">확인 코드</th>
+                <th class="py-3 px-3 whitespace-nowrap">이메일</th>
+                <th class="py-3 px-2.5 whitespace-nowrap">본부</th>
+                <th class="py-3 px-3 whitespace-nowrap">선택 슬롯</th>
+                <th class="py-3 px-2.5 whitespace-nowrap">인원</th>
+                <th class="py-3 px-3 whitespace-nowrap">우선 조건</th>
+              </tr>
+            </thead>
+            <tbody id="adminTableBody" class="divide-y divide-pwc-border/60 text-ink"></tbody>
+          </table>
+          <p id="emptyTableMsg" class="p-6 text-center apple-caption text-muted hidden">아직 신청이 없어요. 설문을 제출하거나 "샘플 30명 추가"를 눌러 보세요.</p>
+        </div>
+      </div>
+      <!-- 편성된 조 -->
+      <div class="space-y-3">
+        <h3 class="apple-caption-strong text-ink">편성된 조</h3>
+        <div id="groupCards" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+        <div id="unmatchedBox" class="hidden p-4 rounded-2xl border border-pwc-border bg-pwc-soft">
+          <div class="apple-caption-strong text-ink mb-1">매칭 대기 <span id="unmatchedCount"></span></div>
+          <p class="apple-fine-print text-muted mb-3">다음 매칭 때 자동으로 다시 시도해요. 바로 배정하려면 조를 골라 넣어 주세요.</p>
+          <div id="unmatchedList" class="space-y-2"></div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- 페이지 안 팝업창 (브라우저 기본 팝업이 막힌 환경에서도 동작) -->
+  <div id="dialog" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-lg p-6 space-y-4">
+      <h2 id="dialogTitle" class="apple-caption-strong text-ink text-base"></h2>
+      <p id="dialogMsg" class="apple-caption text-muted"></p>
+      <input id="dialogInput" type="password" autocomplete="off" class="hidden w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+      <div class="flex gap-2 pt-1">
+        <button id="dialogCancel" type="button" class="apple-press flex-1 py-3 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft apple-caption font-semibold text-ink transition">취소</button>
+        <button id="dialogOk" type="button" class="apple-press flex-1 py-3 rounded-full text-white apple-caption-strong transition"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 안내 토스트 -->
+  <div id="toast" role="status" aria-live="polite" class="hide fixed left-1/2 z-50 max-w-[90vw] px-5 py-3 rounded-2xl bg-ink text-white apple-caption shadow-lg" style="top:calc(20px + env(safe-area-inset-top, 0px)); transform:translateX(-50%)"></div>
+
+  <script>
+    // ===== 설정값 =====
+    const fullWeekDays = [
+      '10/5(월)', '10/6(화)', '10/7(수)', '10/8(목)', '10/9(금)', '10/10(토)', '10/11(일)',
+      '10/12(월)', '10/13(화)', '10/14(수)', '10/15(목)', '10/16(금)', '10/17(토)', '10/18(일)'
+    ];
+    const timeSlots15Min = ['11:30', '11:45', '12:00', '12:15', '12:30', '12:45', '13:00'];
+    const INTERESTS = [
+      ['🏃‍♂️', '운동', ['헬스·러닝', '골프', '테니스·배드민턴', '등산', '기타 운동']],
+      ['🍽️', '먹거리', ['맛집 탐방', '카페·디저트', '요리·와인']],
+      ['🎬', '문화', ['영화·OTT', '독서', '전시·공연', '음악']],
+      ['✈️', '여가', ['국내여행', '해외여행', '게임', '프로야구 직관']],
+      ['📚', '자기계발', ['해외파견', '외국어', '재테크·부동산', '업무·커리어']]
+    ];
+    // ⚠️ 화면 잠금용 비밀번호입니다. 웹페이지 코드는 누구나 볼 수 있으므로 진짜 보안은 아니에요.
+    // 신청에 쓸 수 있는 이메일 도메인. 사내메일이 나오면 'pwc.com'을 추가하거나 이 목록만 바꾸면 됩니다.
+    const EMAIL_DOMAINS = ['naver.com', 'gmail.com'];
+    const ADMIN_PASSWORD = '1234';
+    const STORAGE_KEY = 'samil-hankki-v2-responses';
+    const MATCH_KEY = 'samil-hankki-v2-match';   // 편성된 조 + 자동 매칭 설정
+    const MY_KEY = 'samil-hankki-v2-my';         // 이 기기에서 마지막으로 쓴 이메일·확인 코드
+    const EVENT_YEAR = 2026;
+
+    // ===== 상태 =====
+    // 이 기기에 기억된 내 이메일·코드 (각자의 휴대폰·노트북 브라우저에 저장)
+    function loadMy() { try { return JSON.parse(localStorage.getItem(MY_KEY) || 'null'); } catch (e) { return null; } }
+    function saveMy(email, code) { try { localStorage.setItem(MY_KEY, JSON.stringify({ email, code })); } catch (e) {} }
+    function emptyForm() {
+      const my = loadMy();
+      const [myId, myDomain] = my ? my.email.split('@') : ['', ''];
+      return {
+        name: '', emailId: myId || '', emailDomain: EMAIL_DOMAINS.includes(myDomain) ? myDomain : EMAIL_DOMAINS[0], birthYear: '', gender: '응답 안 함', dept: '', deptOpen: false,
+        slots: [], allergy: '', budget: '무관', foodCategories: [], spicy: '보통',
+        groupSizes: ['3~4명'], vibe: '둘 다 좋아요', interests: [], favoriteThing: '', priority: []
+      };
+    }
+    let formData = emptyForm();
+    let responseList = loadResponses();
+    let matchState = loadMatchState();
+    let isEditingFromStep5 = false;
+    let isAdmin = false;
+
+    function loadResponses() {
+      try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; } catch (e) { return []; }
+    }
+    function defaultMatchState() {
+      return {
+        groups: [], nextNo: 1, lastRunAt: null, lastAutoRunAt: null, lastRunSummary: '',
+        settings: { autoOn: true, time: '22:00', cutoffMin: 60, includePast: false, anchor: new Date().toISOString() }
+      };
+    }
+    function loadMatchState() {
+      const d = defaultMatchState();
+      try {
+        const raw = localStorage.getItem(MATCH_KEY);
+        if (raw) { const st = JSON.parse(raw); return { ...d, ...st, settings: { ...d.settings, ...(st.settings || {}) } }; }
+      } catch (e) {}
+      return d;
+    }
+    function saveMatchState() {
+      try { localStorage.setItem(MATCH_KEY, JSON.stringify(matchState)); } catch (e) {}
+    }
+    function saveResponses() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(responseList)); } catch (e) { /* 저장 불가 환경이면 메모리에만 유지 */ }
+    }
+
+    // ===== 공통 =====
+    let toastTimer;
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.innerText = msg; t.classList.remove('hide');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.add('hide'), 2600);
+    }
+    // 페이지 안 팝업: 확인 → true(또는 입력값), 취소 → null
+    function openDialog({ title, message = '', input = false, okText = '확인', danger = false }) {
+      const box = document.getElementById('dialog');
+      const field = document.getElementById('dialogInput');
+      const ok = document.getElementById('dialogOk');
+      const cancel = document.getElementById('dialogCancel');
+      document.getElementById('dialogTitle').innerText = title;
+      document.getElementById('dialogMsg').innerText = message;
+      document.getElementById('dialogMsg').classList.toggle('hidden', !message);
+      field.value = ''; field.classList.toggle('hidden', !input);
+      ok.innerText = okText;
+      ok.className = 'apple-press flex-1 py-3 rounded-full text-white apple-caption-strong transition ' + (danger ? 'bg-red-600 hover:bg-red-700' : 'bg-pwc-orange hover:bg-pwc-orange-hover');
+      box.classList.remove('hidden');
+      setTimeout(() => (input ? field : ok).focus(), 30);
+      return new Promise(resolve => {
+        const close = val => {
+          box.classList.add('hidden');
+          ok.onclick = cancel.onclick = box.onclick = field.onkeydown = document.onkeydown = null;
+          resolve(val);
+        };
+        ok.onclick = () => close(input ? field.value : true);
+        cancel.onclick = () => close(null);
+        box.onclick = e => { if (e.target === box) close(null); };
+        field.onkeydown = e => { if (e.key === 'Enter') close(field.value); };
+        document.onkeydown = e => { if (e.key === 'Escape') close(null); };
+      });
+    }
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function slotKeyOrder(s) {
+      const [d, t] = s.split(' ');
+      return fullWeekDays.indexOf(d) * 100 + timeSlots15Min.indexOf(t);
+    }
+    function sortSlots(slots) { return [...slots].sort((a, b) => slotKeyOrder(a) - slotKeyOrder(b)); }
+    function summarizeSlots(slots) {
+      // "10/7(수) 12:00, 12:15 · 10/8(목) 11:30" 처럼 날짜별로 묶어서 보여 줌
+      const byDate = {};
+      sortSlots(slots).forEach(s => { const [d, t] = s.split(' '); (byDate[d] = byDate[d] || []).push(t); });
+      return Object.entries(byDate).map(([d, ts]) => `${d} ${ts.join(', ')}`).join(' · ');
+    }
+
+    // ===== 화면 생성 =====
+    function buildInterestGroups() {
+      document.getElementById('interestGroups').innerHTML = INTERESTS.map(([emo, title, items]) => `
+        <div>
+          <span class="apple-fine-print font-semibold text-muted mb-1.5 flex items-center gap-1"><span>${emo}</span> ${title}</span>
+          <div class="flex flex-wrap gap-2">
+            ${items.map(v => `<button type="button" class="apple-press interest-pill px-3.5 py-1.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="${v}">${v}</button>`).join('')}
+          </div>
+        </div>`).join('');
+    }
+    function populateBirthYears() {
+      const select = document.getElementById('selectBirthYear');
+      for (let y = 2005; y >= 1970; y--) {
+        const opt = document.createElement('option');
+        opt.value = y; opt.innerText = `${y}년생`;
+        select.appendChild(opt);
+      }
+    }
+
+    // ===== 2단계: 날짜×시간 그리드 =====
+    const CELL_ON = 'slot-cell w-full py-2 rounded text-[10px] font-bold border transition cursor-pointer select-none text-center bg-pwc-orange text-white border-pwc-orange shadow-sm';
+    const CELL_OFF = 'slot-cell w-full py-2 rounded text-[10px] font-medium border transition cursor-pointer select-none text-center bg-white text-muted border-pwc-border/80 hover:border-pwc-orange';
+
+    function renderWhenGrid() {
+      const head = document.getElementById('whenHeadRow');
+      fullWeekDays.forEach(d => {
+        const th = document.createElement('th');
+        th.className = 'py-2 px-1 whitespace-nowrap' + (/(토|일)/.test(d) ? ' text-pwc-orange' : '');
+        th.innerText = d;
+        head.appendChild(th);
+      });
+      const tbody = document.getElementById('whenGridBody');
+      tbody.innerHTML = timeSlots15Min.map(time => `
+        <tr>
+          <td class="py-2 px-2 bg-pwc-soft text-left pl-3 text-muted font-semibold text-[11px] select-none sticky left-0 z-10">${time}</td>
+          ${fullWeekDays.map(date => `<td class="p-0.5"><div role="button" tabindex="0" aria-pressed="false" aria-label="${date} ${time}" class="${CELL_OFF}" data-slot="${date} ${time}">-</div></td>`).join('')}
+        </tr>`).join('');
+
+      const grid = document.getElementById('gridScrollContainer');
+      let dragging = false, dragMode = null, lastPointer = 'mouse';
+
+      // PC(마우스): 누른 채 드래그로 여러 칸 선택/해제
+      grid.addEventListener('pointerdown', e => {
+        lastPointer = e.pointerType;
+        if (e.pointerType !== 'mouse' || e.button !== 0) return;
+        const cell = e.target.closest('.slot-cell'); if (!cell) return;
+        e.preventDefault();
+        dragging = true;
+        dragMode = formData.slots.includes(cell.dataset.slot) ? 'deselect' : 'select';
+        setSlot(cell, dragMode === 'select');
+      });
+      grid.addEventListener('pointerover', e => {
+        if (!dragging) return;
+        const cell = e.target.closest('.slot-cell'); if (!cell) return;
+        setSlot(cell, dragMode === 'select');
+      });
+      window.addEventListener('pointerup', () => { dragging = false; dragMode = null; });
+
+      // 휴대폰(터치): 탭 한 번 = 한 칸 선택/해제. 드래그는 표 스크롤로 사용
+      grid.addEventListener('click', e => {
+        if (lastPointer === 'mouse') return;
+        const cell = e.target.closest('.slot-cell'); if (!cell) return;
+        setSlot(cell, !formData.slots.includes(cell.dataset.slot));
+      });
+      // 키보드: Enter / Space
+      grid.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const cell = e.target.closest('.slot-cell'); if (!cell) return;
+        e.preventDefault();
+        setSlot(cell, !formData.slots.includes(cell.dataset.slot));
+      });
+    }
+    function setSlot(cell, on) {
+      const slot = cell.dataset.slot;
+      if (on && !formData.slots.includes(slot)) formData.slots.push(slot);
+      if (!on) formData.slots = formData.slots.filter(s => s !== slot);
+      paintCell(cell);
+      updateSlotCount();
+    }
+    function paintCell(cell) {
+      const on = formData.slots.includes(cell.dataset.slot);
+      cell.className = on ? CELL_ON : CELL_OFF;
+      cell.innerText = on ? '선택' : '-';
+      cell.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    function paintGrid() { document.querySelectorAll('.slot-cell').forEach(paintCell); updateSlotCount(); }
+    function updateSlotCount() { document.getElementById('selectedSlotsCount').innerText = `${formData.slots.length}개 슬롯 선택됨`; }
+    function clearSlots() { formData.slots = []; paintGrid(); }
+
+    // ===== 버튼 선택 상태 =====
+    function highlightActiveBtn(btn, isActive) {
+      if (isActive) {
+        btn.classList.add('bg-pwc-orange', 'text-white', 'border-pwc-orange', 'shadow-sm', 'font-semibold');
+        btn.classList.remove('bg-white', 'text-ink', 'border-pwc-border');
+      } else {
+        btn.classList.remove('bg-pwc-orange', 'text-white', 'border-pwc-orange', 'shadow-sm', 'font-semibold');
+        btn.classList.add('bg-white', 'text-ink', 'border-pwc-border');
+      }
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    }
+    function paintDept() {
+      document.querySelectorAll('.dept-seg-btn').forEach(b => {
+        const on = formData.dept === b.dataset.val;
+        b.className = 'dept-seg-btn py-2.5 rounded-lg text-xs md:text-sm font-semibold transition ' +
+          (on ? 'bg-white text-pwc-orange shadow-sm border border-pwc-border' : 'text-muted hover:text-ink');
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    function paintAll() {
+      paintDept(); paintGrid();
+      const single = { '.budget-pill': 'budget', '.spicy-btn': 'spicy', '.vibe-btn': 'vibe' };
+      Object.entries(single).forEach(([sel, key]) => document.querySelectorAll(sel).forEach(b => highlightActiveBtn(b, formData[key] === b.dataset.val)));
+      const multi = { '.food-pill': 'foodCategories', '.group-size-multi-btn': 'groupSizes', '.priority-btn': 'priority', '.interest-pill': 'interests' };
+      Object.entries(multi).forEach(([sel, key]) => document.querySelectorAll(sel).forEach(b => highlightActiveBtn(b, formData[key].includes(b.dataset.val))));
+      document.getElementById('priorityCountBadge').innerText = formData.priority.length + '/2';
+      document.getElementById('interestCountBadge').innerText = formData.interests.length + '/3';
+      document.getElementById('inputName').value = formData.name;
+      document.getElementById('inputEmail').value = formData.emailId;
+      document.getElementById('selectEmailDomain').value = formData.emailDomain;
+      document.getElementById('inputAllergy').value = formData.allergy;
+      document.getElementById('inputFavoriteThing').value = formData.favoriteThing;
+      document.getElementById('selectBirthYear').value = formData.birthYear;
+      document.getElementById('selectGender').value = formData.gender;
+      document.getElementById('checkDeptOpen').checked = formData.deptOpen;
+      document.getElementById('checkFinalConsent').checked = false;
+      document.getElementById('submitBtn').disabled = true;
+    }
+
+    function setupInteractions() {
+      document.querySelectorAll('.dept-seg-btn').forEach(btn => btn.addEventListener('click', () => { formData.dept = btn.dataset.val; paintDept(); }));
+
+      const single = { '.budget-pill': 'budget', '.spicy-btn': 'spicy', '.vibe-btn': 'vibe' };
+      Object.entries(single).forEach(([sel, key]) => document.querySelectorAll(sel).forEach(btn => btn.addEventListener('click', () => {
+        formData[key] = btn.dataset.val;
+        document.querySelectorAll(sel).forEach(b => highlightActiveBtn(b, b === btn));
+      })));
+
+      document.querySelectorAll('.food-pill').forEach(btn => btn.addEventListener('click', () => {
+        const v = btn.dataset.val;
+        formData.foodCategories = formData.foodCategories.includes(v) ? formData.foodCategories.filter(f => f !== v) : [...formData.foodCategories, v];
+        highlightActiveBtn(btn, formData.foodCategories.includes(v));
+      }));
+
+      // 희망 인원: 중복 가능, 최소 1개는 남김
+      document.querySelectorAll('.group-size-multi-btn').forEach(btn => btn.addEventListener('click', () => {
+        const v = btn.dataset.val;
+        if (formData.groupSizes.includes(v)) {
+          if (formData.groupSizes.length === 1) return showToast('희망 인원은 1개 이상 골라 주세요.');
+          formData.groupSizes = formData.groupSizes.filter(s => s !== v);
+        } else formData.groupSizes = [...formData.groupSizes, v];
+        highlightActiveBtn(btn, formData.groupSizes.includes(v));
+      }));
+
+      bindLimitedMulti('.priority-btn', 'priority', 2, 'priorityCountBadge', '우선 조건은 최대 2개까지 고를 수 있어요.');
+      bindLimitedMulti('.interest-pill', 'interests', 3, 'interestCountBadge', '관심사는 최대 3개까지 고를 수 있어요.');
+
+      document.getElementById('checkFinalConsent').addEventListener('change', e => { document.getElementById('submitBtn').disabled = !e.target.checked; });
+      document.getElementById('inputEmail').addEventListener('input', e => {
+        // 전체 주소(abc@gmail.com)를 붙여 넣으면 앞부분만 남기고, 도메인이 목록에 있으면 자동 선택
+        const v = e.target.value;
+        if (v.includes('@')) {
+          const [id, domain] = v.split('@');
+          e.target.value = id;
+          const d = (domain || '').trim().toLowerCase();
+          if (EMAIL_DOMAINS.includes(d)) document.getElementById('selectEmailDomain').value = d;
+        }
+      });
+    }
+    function bindLimitedMulti(selector, key, max, badgeId, overMsg) {
+      document.querySelectorAll(selector).forEach(btn => btn.addEventListener('click', () => {
+        const v = btn.dataset.val;
+        let list = formData[key];
+        if (list.includes(v)) list = list.filter(x => x !== v);
+        else { if (list.length >= max) return showToast(overMsg); list = [...list, v]; }
+        formData[key] = list;
+        highlightActiveBtn(btn, list.includes(v));
+        document.getElementById(badgeId).innerText = list.length + '/' + max;
+      }));
+    }
+
+    function readInputs() {
+      formData.name = document.getElementById('inputName').value.trim();
+      formData.emailId = document.getElementById('inputEmail').value.trim();
+      formData.emailDomain = document.getElementById('selectEmailDomain').value || EMAIL_DOMAINS[0];
+      formData.allergy = document.getElementById('inputAllergy').value.trim();
+      formData.favoriteThing = document.getElementById('inputFavoriteThing').value.trim();
+      formData.birthYear = document.getElementById('selectBirthYear').value;
+      formData.gender = document.getElementById('selectGender').value;
+      formData.deptOpen = document.getElementById('checkDeptOpen').checked;
+    }
+
+    // ===== 단계 이동 =====
+    function validateStep(step) {
+      readInputs();
+      if (step === 1) {
+        if (!formData.name) { flag('inputName'); return '이름을 입력해 주세요.'; }
+        if (!/^[A-Za-z0-9._-]+$/.test(formData.emailId)) { flag('emailBox'); return '이메일의 @ 앞부분을 영문·숫자로 입력해 주세요.'; }
+        if (!formData.dept) return '소속 부문·본부를 골라 주세요.';
+      }
+      if (step === 2 && formData.slots.length === 0) return '가능한 시간을 1칸 이상 골라 주세요.';
+      if (step === 4 && formData.interests.length === 0) return '관심사를 1개 이상 골라 주세요.';
+      return '';
+    }
+    function flag(id) {
+      const el = document.getElementById(id);
+      el.classList.add('!border-red-400');
+      (el.querySelector('input') || el).focus();
+      setTimeout(() => el.classList.remove('!border-red-400'), 1800);
+    }
+    function handleNextStep(current) {
+      const msg = validateStep(current);
+      if (msg) return showToast(msg);
+      if (isEditingFromStep5) { isEditingFromStep5 = false; goToStep(5); }
+      else goToStep(current + 1);
+    }
+    function returnToSummary() {
+      const current = [1, 2, 3, 4].find(n => !document.getElementById('step' + n).classList.contains('hidden'));
+      const msg = current ? validateStep(current) : '';
+      if (msg) return showToast(msg);
+      isEditingFromStep5 = false;
+      goToStep(5);
+    }
+
+    function goToStep(stepNumber) {
+      readInputs();
+      if (stepNumber === 6 && !isAdmin) return requestAdminAccess();
+      document.querySelectorAll('.step-card').forEach(el => el.classList.add('hidden'));
+      const target = document.getElementById('step' + stepNumber);
+      if (target) target.classList.remove('hidden');
+
+      const progress = document.getElementById('surveyProgressContainer');
+      const returnBtn = document.getElementById('returnToStep5Btn');
+
+      if (stepNumber >= 1 && stepNumber <= 5) {
+        progress.classList.remove('hidden');
+        returnBtn.classList.toggle('hidden', !(stepNumber < 5 && isEditingFromStep5));
+        document.querySelectorAll('.prog-segment').forEach((seg, i) => {
+          seg.className = 'prog-segment h-1.5 flex-1 rounded-full transition-all duration-300 ' + (i < stepNumber ? 'bg-pwc-orange' : 'bg-hairline');
+        });
+        const titles = ['1 / 5단계 · 기본 정보', '2 / 5단계 · 가능한 일정 선택', '3 / 5단계 · 선호 조건 & 음식 취향', '4 / 5단계 · 이야기거리 & 우선순위', '5 / 5단계 · 최종 확인 및 제출'];
+        document.getElementById('stepIndicatorLabel').innerText = titles[stepNumber - 1];
+        if (stepNumber === 5) { isEditingFromStep5 = false; returnBtn.classList.add('hidden'); updateSummary(); }
+      } else {
+        progress.classList.add('hidden');
+        if (stepNumber === 6) renderAdmin();
+        if (stepNumber === 7) prepareResultView();
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    function jumpToEdit(stepNumber) { isEditingFromStep5 = true; goToStep(stepNumber); }
+
+    // ===== 5단계 요약 =====
+    function updateSummary() {
+      const f = formData;
+      document.getElementById('sumNameContact').innerText =
+        `${f.name || '-'} / ${f.birthYear ? f.birthYear + '년생' : '미입력'} / ${f.gender} / ${f.emailId ? f.emailId + '@' + f.emailDomain : '-'}`;
+      document.getElementById('sumDept').innerText = `${f.dept || '-'} ${f.deptOpen ? '(조원에게 공개)' : '(비공개)'}`;
+      document.getElementById('sumSlots').innerText = f.slots.length ? `${f.slots.length}칸 · ${summarizeSlots(f.slots)}` : '선택 안 됨';
+      document.getElementById('sumFood').innerText = `${f.foodCategories.join(', ') || '전체'} · 맵기 ${f.spicy} · 알레르기 ${f.allergy || '없음'} · 예산 ${f.budget}`;
+      document.getElementById('sumGroupAndVibe').innerText = `${f.groupSizes.join(', ')} · ${f.vibe}`;
+      document.getElementById('sumInterests').innerText = `${f.interests.join(', ') || '-'} (요즘: ${f.favoriteThing || '미입력'})`;
+      document.getElementById('sumPriority').innerText = f.priority.length ? f.priority.map((p, i) => `${i + 1}. ${p}`).join('  ') : '지정 안 함';
+    }
+
+    // ===== 제출 =====
+    function genCode() {
+      let c;
+      do { c = String(Math.floor(100000 + Math.random() * 900000)); } while (responseList.some(r => r.code === c));
+      return c;
+    }
+    function finishApplication() {
+      readInputs();
+      if (!document.getElementById('checkFinalConsent').checked) return showToast('조원 공유 및 매칭 동의에 체크해 주세요.');
+      for (const s of [1, 2, 4]) {
+        const msg = validateStep(s);
+        if (msg) { showToast(msg); return jumpToEdit(s); }
+      }
+      const email = `${formData.emailId}@${formData.emailDomain}`;
+      // 같은 이메일로 다시 신청하면: 기존 확인 코드는 유지하고, 새 조건으로 다시 매칭되도록 기존 조에서 빠짐
+      const prev = responseList.find(r => r.email.toLowerCase() === email.toLowerCase());
+      const id = prev ? prev.id : Date.now() + Math.random();
+      const code = (prev && prev.code) || genCode();
+      if (prev) removeFromGroups(id);
+      const record = { ...formData, email, code, slots: sortSlots(formData.slots), id, createdAt: new Date().toISOString() };
+      responseList = responseList.filter(r => r.email.toLowerCase() !== email.toLowerCase());
+      responseList.unshift(record);
+      saveResponses(); saveMatchState();
+      saveMy(email, code);
+
+      document.getElementById('confirmedEmail').innerText = email;
+      document.getElementById('confirmedCode').innerText = code;
+      document.getElementById('completedTime').innerText = matchState.settings.time;
+      document.querySelectorAll('.step-card').forEach(el => el.classList.add('hidden'));
+      document.getElementById('surveyProgressContainer').classList.add('hidden');
+      document.getElementById('stepCompleted').classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    function startNewApplication() {
+      formData = emptyForm();
+      isEditingFromStep5 = false;
+      paintAll();
+      goToStep(1);
+    }
+    function goHome() {
+      formData = emptyForm();
+      isEditingFromStep5 = false;
+      paintAll();
+      goToStep(0);
+    }
+
+    // ===== 운영자 =====
+    async function requestAdminAccess() {
+      if (isAdmin) { goToStep(6); return; }
+      const pass = await openDialog({ title: '운영자 콘솔', message: '운영자 비밀번호를 입력해 주세요.', input: true, okText: '들어가기' });
+      if (pass === null) return;
+      if (pass === ADMIN_PASSWORD) { isAdmin = true; goToStep(6); }
+      else showToast('비밀번호가 올바르지 않습니다.');
+    }
+    function exitAdmin() { isAdmin = false; goToStep(0); }
+
+    // ===== 날짜·시간 도우미 =====
+    function slotDate(slot) {
+      // "10/7(수) 12:00" → 2026-10-07 12:00
+      const m = slot.match(/^(\d+)\/(\d+)\(.\) (\d+):(\d+)$/);
+      return m ? new Date(EVENT_YEAR, +m[1] - 1, +m[2], +m[3], +m[4]) : new Date(0);
+    }
+    function isSlotOpen(slot, now = new Date()) {
+      if (matchState.settings.includePast) return true;
+      return slotDate(slot) - now >= (Number(matchState.settings.cutoffMin) || 0) * 60000;
+    }
+    function openSlotsOf(r, now = new Date()) { return (r.slots || []).filter(s => isSlotOpen(s, now)); }
+    function fmtDateTime(d) {
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+    function lastScheduledBefore(now) {
+      const [h, m] = (matchState.settings.time || '22:00').split(':').map(Number);
+      const d = new Date(now); d.setHours(h, m, 0, 0);
+      if (d > now) d.setDate(d.getDate() - 1);
+      return d;
+    }
+    function nextScheduled(now = new Date()) {
+      const d = lastScheduledBefore(now); d.setDate(d.getDate() + 1); return d;
+    }
+
+    // ===== 조 데이터 도우미 =====
+    const sid = x => String(x);
+    function byIdMap() { return Object.fromEntries(responseList.map(r => [sid(r.id), r])); }
+    function groupOfMember(id) { return matchState.groups.find(g => g.memberIds.some(m => sid(m) === sid(id))); }
+    function membersOf(g, byId = byIdMap()) { return g.memberIds.map(id => byId[sid(id)]).filter(Boolean); }
+    function removeFromGroups(id) {
+      matchState.groups.forEach(g => {
+        g.memberIds = g.memberIds.filter(m => sid(m) !== sid(id));
+        if (g.responses) delete g.responses[sid(id)];
+      });
+      matchState.groups = matchState.groups.filter(g => g.memberIds.length > 0);
+    }
+    // ===== 참석 응답 =====
+    // 응답 마감 = 점심 시작 N분 전 (테스트 모드에서는 마감 없음)
+    function groupDeadline(g) { return new Date(slotDate(g.slot).getTime() - (Number(matchState.settings.cutoffMin) || 0) * 60000); }
+    function isDeadlinePassed(g, now = new Date()) { return !matchState.settings.includePast && now >= groupDeadline(g); }
+    function responseOf(g, id) { return (g.responses || {})[sid(id)] || 'pending'; }
+    function yesCount(g) { return g.memberIds.filter(id => responseOf(g, id) === 'yes').length; }
+    // 확정: 운영자 강제 확정 / 전원 참석 / 마감이 지남(무응답은 참석으로 간주)
+    function isConfirmed(g) {
+      return g.locked || (g.memberIds.length >= 2 && yesCount(g) === g.memberIds.length) || isDeadlinePassed(g);
+    }
+    function statusLabel(g) {
+      if (g.locked) return '확정 (운영자)';
+      if (isConfirmed(g)) return '확정';
+      return `참석 ${yesCount(g)}/${g.memberIds.length}명`;
+    }
+    function waitingList() {
+      const assigned = new Set(matchState.groups.flatMap(g => g.memberIds.map(sid)));
+      return responseList.filter(r => !assigned.has(sid(r.id)));
+    }
+
+    // ===== 자동 매칭 (데모: 웹앱이 열려 있을 때 실행 시각이 지났으면 실행) =====
+    function checkAutoMatch() {
+      const st = matchState.settings;
+      if (!st.autoOn) return;
+      const now = new Date();
+      const due = lastScheduledBefore(now);
+      const since = Math.max(new Date(st.anchor).getTime(), matchState.lastAutoRunAt ? new Date(matchState.lastAutoRunAt).getTime() : 0);
+      if (due.getTime() > since) runMatching('auto');
+    }
+
+    // ===== 매칭 점수 (기존 그대로) =====
+    function sizeOk(size, r) {
+      const g = r.groupSizes || [];
+      if (size <= 2) return g.includes('2명');
+      if (size <= 4) return g.includes('3~4명');
+      return g.includes('5명~');
+    }
+    function desiredSize(r) {
+      const g = r.groupSizes || [];
+      if (g.includes('3~4명')) return 4;
+      if (g.includes('5명~')) return 5;
+      return 2;
+    }
+    function shared(a, b) { return a.filter(x => b.includes(x)); }
+    function pairScore(a, b) {
+      const si = shared(a.interests || [], b.interests || []).length;
+      const sf = shared(a.foodCategories || [], b.foodCategories || []).length;
+      let s = si * 2 + sf;
+      if ((a.avoid || []).includes(sid(b.id)) || (b.avoid || []).includes(sid(a.id))) s -= 100; // 패스했던 조원은 피함
+      if (a.budget === b.budget || a.budget === '무관' || b.budget === '무관') s += 1;
+      if (a.vibe === b.vibe || a.vibe === '둘 다 좋아요' || b.vibe === '둘 다 좋아요') s += 1;
+      if (a.spicy === b.spicy) s += 0.5;
+      [[a, b], [b, a]].forEach(([me, other]) => (me.priority || []).forEach((p, idx) => {
+        const w = idx === 0 ? 4 : 3; // 먼저 고른 조건에 더 큰 가중치
+        if (p === '관심사') s += si * w;
+        if (p === '음식 취향') s += sf * w;
+        if (p === '다른 부문' && me.dept !== other.dept) s += w;
+        if (p === '같은 부문' && me.dept === other.dept) s += w;
+        if (p === '나이대' && me.birthYear && other.birthYear && Math.abs(me.birthYear - other.birthYear) <= 3) s += w;
+      }));
+      return s;
+    }
+    function groupScore(group, c) { return group.reduce((sum, m) => sum + pairScore(m, c), 0); }
+
+    // ===== 매칭 실행: 아직 조가 없는 사람만 대상 (이미 편성된 조는 건드리지 않음) =====
+    function runMatching(source = 'manual') {
+      const now = new Date();
+      const byId = byIdMap();
+      const waiting = waitingList();
+      const unassigned = new Set(waiting.map(r => sid(r.id)));
+      const before = unassigned.size;
+      const openOf = r => openSlotsOf(r, now);
+      const allSlots = fullWeekDays.flatMap(d => timeSlots15Min.map(t => `${d} ${t}`)).filter(s => isSlotOpen(s, now));
+      const formed = [];
+
+      // 1차: 3명 이상 모이는 칸 → 2차: 2명 이상 모이는 칸
+      for (const minPool of [3, 2]) {
+        const used = new Set();
+        while (true) {
+          let best = null, bestPool = [];
+          allSlots.forEach(slot => {
+            if (used.has(slot)) return;
+            const pool = [...unassigned].map(id => byId[id]).filter(r => openOf(r).includes(slot));
+            if (pool.length > bestPool.length) { best = slot; bestPool = pool; }
+          });
+          if (!best || bestPool.length < minPool) break;
+          used.add(best);
+
+          const pool = bestPool.sort((a, b) => openOf(a).length - openOf(b).length); // 가능한 칸이 적은 사람 먼저
+          const slotGroups = [];
+          while (pool.length >= 2) {
+            const seed = pool.shift();
+            let size = Math.min(desiredSize(seed), pool.length + 1);
+            if (size < 3 && !sizeOk(2, seed)) {
+              if (slotGroups.length) { pool.unshift(seed); break; }
+              if (pool.length + 1 < 3) { pool.unshift(seed); break; }
+              size = 3;
+            }
+            const g = [seed];
+            while (g.length < size && pool.length) {
+              const fit = c => groupScore(g, c) + (sizeOk(size, c) ? 0 : -8);
+              pool.sort((a, b) => fit(b) - fit(a));
+              g.push(pool.shift());
+            }
+            slotGroups.push(g);
+          }
+          pool.forEach(r => {
+            const cand = slotGroups.filter(g => g.length < 6 && g.length >= 2).sort((a, b) => groupScore(b, r) - groupScore(a, r))[0];
+            if (cand) cand.push(r);
+          });
+          slotGroups.forEach(g => { g.forEach(m => unassigned.delete(sid(m.id))); formed.push({ slot: best, members: g }); });
+        }
+      }
+
+      // 새로 만든 조 저장 (번호는 계속 이어서)
+      formed.sort((a, b) => slotKeyOrder(a.slot) - slotKeyOrder(b.slot)).forEach(f => {
+        matchState.groups.push({
+          id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          no: matchState.nextNo++, slot: f.slot, memberIds: f.members.map(m => m.id),
+          locked: false, responses: {}, createdAt: now.toISOString()
+        });
+      });
+
+      // 그래도 남은 사람: 확정되지 않은 기존 조 중 시간이 맞고 자리가 있는 곳에 합류
+      [...unassigned].forEach(id => {
+        const r = byId[id];
+        const cand = matchState.groups
+          .filter(g => !isConfirmed(g) && g.memberIds.length >= 2 && g.memberIds.length < 6 && openOf(r).includes(g.slot))
+          .sort((a, b) => groupScore(membersOf(b, byId), r) - groupScore(membersOf(a, byId), r))[0];
+        if (cand) { cand.memberIds.push(r.id); unassigned.delete(id); }
+      });
+
+      const matched = before - unassigned.size;
+      matchState.lastRunAt = now.toISOString();
+      if (source === 'auto') matchState.lastAutoRunAt = now.toISOString();
+      matchState.lastRunSummary = `${source === 'auto' ? '자동' : '수동'} 매칭 ${fmtDateTime(now)} · 새 조 ${formed.length}개 · ${matched}명 배정 · 대기 ${unassigned.size}명`;
+      saveMatchState();
+      if (isAdmin) renderAdmin();
+      if (source === 'manual' || isAdmin) showToast(before ? matchState.lastRunSummary : '매칭을 기다리는 신청자가 없어요.');
+    }
+    function groupReasons(members) {
+      const count = {};
+      members.forEach(m => (m.interests || []).forEach(i => count[i] = (count[i] || 0) + 1));
+      const tags = Object.entries(count).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, n]) => `${k} ${n}명`);
+      const depts = new Set(members.map(m => m.dept)).size;
+      tags.push(depts > 1 ? `${depts}개 부문` : '같은 부문');
+      return tags;
+    }
+
+    // ===== 운영자 수정 권한 =====
+    function moveMember(id, target) {
+      if (target === '__') return;
+      const r = byIdMap()[sid(id)];
+      removeFromGroups(id);
+      if (target) {
+        const g = matchState.groups.find(x => x.id === target);
+        if (g) {
+          g.memberIds.push(r.id);
+          showToast(r.slots.includes(g.slot) ? `${r.name}님을 ${g.no}조로 옮겼어요.` : `⚠️ ${r.name}님이 고르지 않은 시간(${g.slot})이에요. 본인에게 따로 확인해 주세요.`);
+        }
+      } else showToast(`${r.name}님을 매칭 대기로 뺐어요.`);
+      saveMatchState(); renderAdmin();
+    }
+    function toggleLock(groupId) {
+      const g = matchState.groups.find(x => x.id === groupId); if (!g) return;
+      g.locked = !g.locked;
+      saveMatchState(); renderAdmin();
+      showToast(g.locked ? `${g.no}조를 강제 확정했어요. 조원 응답과 상관없이 확정되고, 자동 매칭이 사람을 추가하지 않아요.` : `${g.no}조 강제 확정을 해제했어요.`);
+    }
+    async function disbandGroup(groupId) {
+      const g = matchState.groups.find(x => x.id === groupId); if (!g) return;
+      if (!await openDialog({ title: `${g.no}조 해체`, message: '조원 전원이 매칭 대기로 돌아가요.', okText: '해체', danger: true })) return;
+      matchState.groups = matchState.groups.filter(x => x.id !== groupId);
+      saveMatchState(); renderAdmin(); showToast(`${g.no}조를 해체했어요.`);
+    }
+    async function resetGroups() {
+      if (!matchState.groups.length) return showToast('초기화할 편성 결과가 없어요.');
+      if (!await openDialog({ title: '편성 결과 초기화', message: '모든 조가 사라지고 전원이 매칭 대기로 돌아가요. 신청 응답은 그대로 남아요.', okText: '초기화', danger: true })) return;
+      matchState.groups = []; matchState.nextNo = 1; matchState.lastRunSummary = '';
+      saveMatchState(); renderAdmin(); showToast('편성 결과를 초기화했어요.');
+    }
+    function saveSettings() {
+      const t = document.getElementById('setTime').value;
+      if (!/^\d{2}:\d{2}$/.test(t)) return showToast('실행 시각을 입력해 주세요.');
+      const st = matchState.settings;
+      st.autoOn = document.getElementById('setAutoOn').checked;
+      st.time = t;
+      st.cutoffMin = Math.max(0, Number(document.getElementById('setCutoff').value) || 0);
+      st.includePast = document.getElementById('setIncludePast').checked;
+      st.anchor = new Date().toISOString(); // 저장 이후 도래하는 실행 시각부터 자동 실행
+      saveMatchState(); renderAdmin(); updateLandingNote();
+      showToast(st.autoOn ? `저장했어요. 다음 자동 매칭은 ${fmtDateTime(nextScheduledAfterSave())}이에요.` : '저장했어요. 자동 매칭이 꺼져 있어요.');
+    }
+    function nextScheduledAfterSave() {
+      const now = new Date(); const last = lastScheduledBefore(now);
+      return last > now ? last : nextScheduled(now);
+    }
+
+    // ===== 운영자 화면 그리기 =====
+    function renderAdmin() {
+      renderAdminTable(); renderSettings(); renderGroups();
+    }
+    function renderSettings() {
+      const st = matchState.settings;
+      document.getElementById('setAutoOn').checked = st.autoOn;
+      document.getElementById('setTime').value = st.time;
+      document.getElementById('setCutoff').value = st.cutoffMin;
+      document.getElementById('setIncludePast').checked = st.includePast;
+      const next = st.autoOn ? `다음 자동 매칭: ${fmtDateTime(nextScheduled())}` : '자동 매칭 꺼짐';
+      document.getElementById('autoStatus').innerText = `${next}\n마지막 실행: ${matchState.lastRunSummary || '아직 없음'}`;
+    }
+    function renderAdminTable() {
+      const byGroup = {};
+      matchState.groups.forEach(g => g.memberIds.forEach(id => byGroup[sid(id)] = g));
+      const q = (document.getElementById('adminSearch').value || '').trim().toLowerCase();
+      const rows = q ? responseList.filter(r => (r.name || '').toLowerCase().includes(q) || (r.email || '').toLowerCase().includes(q)) : responseList;
+      document.getElementById('adminTableBody').innerHTML = rows.map(r => {
+        const g = byGroup[sid(r.id)];
+        return `
+        <tr class="hover:bg-pwc-canvas/60 transition">
+          <td class="py-3 px-3 font-semibold text-ink whitespace-nowrap">${esc(r.name)}</td>
+          <td class="py-3 px-3 whitespace-nowrap ${g ? 'text-pwc-orange font-semibold' : 'text-muted'}">${g ? `${g.no}조 · ${responseOf(g, r.id) === 'yes' ? '참석' : (isConfirmed(g) ? '확정' : '응답 대기')}` : '대기'}</td>
+          <td class="py-3 px-3 font-mono font-bold text-pwc-orange text-sm tracking-wider">${esc(r.code || '-')}</td>
+          <td class="py-3 px-3 text-muted">${esc(r.email)}</td>
+          <td class="py-3 px-2.5 font-medium">${esc(r.dept)}</td>
+          <td class="py-3 px-3 font-medium whitespace-nowrap">${esc(r.slots[0] || '-')}${r.slots.length > 1 ? ` 외 ${r.slots.length - 1}건` : ''}</td>
+          <td class="py-3 px-2.5 whitespace-nowrap">${esc((r.groupSizes || []).join(', '))}</td>
+          <td class="py-3 px-3 whitespace-nowrap">${esc((r.priority || []).join(', ') || '-')}</td>
+        </tr>`;
+      }).join('');
+      const empty = document.getElementById('emptyTableMsg');
+      empty.innerText = responseList.length ? `"${q}"에 해당하는 신청자가 없어요.` : '아직 신청이 없어요. 설문을 제출하거나 "샘플 30명 추가"를 눌러 보세요.';
+      empty.classList.toggle('hidden', rows.length > 0);
+      document.getElementById('kpiCount').innerText = responseList.length;
+      document.getElementById('kpiGroups').innerText = matchState.groups.length;
+      document.getElementById('kpiWaiting').innerText = waitingList().length;
+    }
+    function groupOptions(excludeId, r) {
+      const sorted = [...matchState.groups].sort((a, b) => a.no - b.no);
+      return `<option value="__" selected disabled>${excludeId ? '다른 조로 이동…' : '조에 넣기…'}</option>` +
+        sorted.filter(g => g.id !== excludeId).map(g =>
+          `<option value="${g.id}">${g.no}조 · ${esc(g.slot)} · ${g.memberIds.length}명${r.slots.includes(g.slot) ? ' ✓시간 맞음' : ''}</option>`).join('') +
+        (excludeId ? '<option value="">매칭 대기로 빼기</option>' : '');
+    }
+    function renderGroups() {
+      const byId = byIdMap();
+      const groups = [...matchState.groups].sort((a, b) => slotKeyOrder(a.slot) - slotKeyOrder(b.slot) || a.no - b.no);
+      const selectCls = 'mt-1 w-full px-2 py-1.5 bg-pwc-canvas border border-pwc-border rounded-lg apple-fine-print text-ink focus:outline-none focus:border-pwc-orange';
+      document.getElementById('groupCards').innerHTML = groups.map(g => {
+        const members = membersOf(g, byId);
+        return `
+        <div class="bg-white p-4 rounded-2xl border ${isConfirmed(g) ? 'border-pwc-orange' : 'border-pwc-border'} shadow-pwc flex flex-col">
+          <div class="flex items-center justify-between mb-2 gap-2">
+            <span class="apple-caption-strong text-ink">${g.no}조 <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold align-middle ${isConfirmed(g) ? 'bg-pwc-orange text-white' : 'bg-pwc-soft text-pwc-orange border border-pwc-border'}">${esc(statusLabel(g))}</span></span>
+            <span class="apple-fine-print font-semibold text-pwc-orange text-right">${esc(g.slot)} 시작 · ${members.length}명</span>
+          </div>
+          <ul class="apple-caption text-ink space-y-2 mb-3">
+            ${members.map(m => `
+              <li>
+                <div>${esc(m.name)} <span class="apple-fine-print font-semibold ${responseOf(g, m.id) === 'yes' ? 'text-pwc-orange' : 'text-muted'}">${responseOf(g, m.id) === 'yes' ? '참석✓' : '대기'}</span> <span class="text-muted apple-fine-print">${m.deptOpen ? esc(m.dept) : '부문 비공개'} · ${esc((m.interests || []).join(', '))}</span>
+                ${m.slots.includes(g.slot) ? '' : '<span class="apple-fine-print text-red-600 font-semibold"> ⚠️ 고르지 않은 시간</span>'}</div>
+                <select class="${selectCls}" aria-label="${esc(m.name)} 이동" onchange="moveMember('${sid(m.id)}', this.value)">${groupOptions(g.id, m)}</select>
+              </li>`).join('')}
+          </ul>
+          ${members.length < 2 ? '<p class="apple-fine-print text-red-600 mb-2">⚠️ 1명뿐인 조예요. 사람을 더 넣거나 해체해 주세요.</p>' : ''}
+          <div class="flex flex-wrap gap-1 mb-3">${groupReasons(members).map(t => `<span class="px-2 py-0.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print text-ink">${esc(t)}</span>`).join('')}</div>
+          <div class="mt-auto flex gap-2">
+            <button onclick="toggleLock('${g.id}')" class="flex-1 py-2 rounded-full apple-fine-print font-semibold transition ${g.locked ? 'border border-pwc-border bg-white text-ink hover:bg-pwc-soft' : 'bg-pwc-orange text-white hover:bg-pwc-orange-hover'}">${g.locked ? '강제 확정 해제' : '강제 확정'}</button>
+            <button onclick="disbandGroup('${g.id}')" class="px-4 py-2 rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50 apple-fine-print font-semibold transition">해체</button>
+          </div>
+        </div>`;
+      }).join('') || '<p class="apple-caption text-muted">아직 편성된 조가 없어요. "지금 매칭 실행"을 누르거나 자동 매칭 시각을 기다려 주세요.</p>';
+
+      const waiting = waitingList();
+      document.getElementById('unmatchedBox').classList.toggle('hidden', !waiting.length);
+      document.getElementById('unmatchedCount').innerText = `${waiting.length}명`;
+      document.getElementById('unmatchedList').innerHTML = waiting.map(r => `
+        <div class="bg-white rounded-xl border border-pwc-border p-3">
+          <div class="apple-caption text-ink">${esc(r.name)} <span class="apple-fine-print text-muted">${esc(summarizeSlots(r.slots))}${openSlotsOf(r).length ? '' : ' · 선택한 시간 모두 마감'}</span></div>
+          ${matchState.groups.length ? `<select class="${selectCls}" aria-label="${esc(r.name)} 조에 넣기" onchange="moveMember('${sid(r.id)}', this.value)">${groupOptions(null, r)}</select>` : ''}
+        </div>`).join('');
+    }
+
+    // ===== 신청자: 내 결과 확인 =====
+    function prepareResultView() {
+      document.getElementById('resultBox').innerHTML = '';
+      const my = loadMy();
+      document.getElementById('resultEmail').value = my ? my.email : '';
+      document.getElementById('resultCode').value = my ? my.code : '';
+      if (my) lookupResult(true);
+    }
+    function lookupResult(silent = false) {
+      const email = document.getElementById('resultEmail').value.trim().toLowerCase();
+      const code = document.getElementById('resultCode').value.trim();
+      const box = document.getElementById('resultBox');
+      if (!email || !code) { if (!silent) showToast('이메일과 확인 코드를 모두 입력해 주세요.'); return; }
+      const me = responseList.find(r => r.email.toLowerCase() === email);
+      if (!me || me.code !== code) {
+        box.innerHTML = `<div class="p-5 rounded-2xl border border-red-200 bg-red-50 apple-caption text-red-700">이메일 또는 확인 코드가 맞지 않아요. 신청 완료 화면에서 받은 6자리 코드를 확인해 주세요.</div>`;
+        return;
+      }
+      saveMy(me.email, code);
+      const g = groupOfMember(me.id);
+      if (!g) {
+        let msg;
+        if (!openSlotsOf(me).length) msg = '선택한 시간이 모두 마감됐어요. 가능한 시간을 넓혀서 다시 신청해 주세요.';
+        else if (matchState.lastRunAt && me.createdAt && new Date(matchState.lastRunAt) > new Date(me.createdAt))
+          msg = `이번 매칭에서는 맞는 조를 찾지 못했어요. ${matchState.settings.autoOn ? `다음 매칭(${fmtDateTime(nextScheduled())})에서 자동으로 다시 찾아 드려요.` : '운영자가 다시 매칭하면 여기에 표시돼요.'}`;
+        else msg = matchState.settings.autoOn ? `아직 매칭 전이에요. ${fmtDateTime(nextScheduled())}에 조를 짜 드려요.` : '아직 매칭 전이에요. 운영자가 매칭을 진행하면 여기에 표시돼요.';
+        box.innerHTML = `
+          <div class="p-6 rounded-2xl border border-pwc-border bg-white shadow-pwc text-center space-y-3">
+            <div class="text-3xl">⏳</div>
+            <p class="apple-caption-strong text-ink">${esc(me.name)}님, 매칭을 기다리고 있어요</p>
+            <p class="apple-caption text-muted">${esc(msg)}</p>
+            ${openSlotsOf(me).length ? '' : '<button onclick="startNewApplication()" class="mt-1 px-5 py-2.5 rounded-full bg-pwc-orange text-white apple-caption-strong">다시 신청하기</button>'}
+          </div><div class="text-center pt-3"><button onclick="forgetMe()" class="apple-fine-print font-semibold text-muted hover:text-red-600 underline">이 기기에서 내 정보 지우기</button></div>`;
+        return;
+      }
+      const members = membersOf(g);
+      box.innerHTML = `
+        <div class="p-6 rounded-2xl border border-pwc-orange bg-white shadow-pwc space-y-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="apple-fine-print font-semibold text-muted">${esc(me.name)}님의 점심 조</p>
+              <p class="text-2xl font-bold text-ink mt-0.5">${esc(g.slot)} 시작</p>
+            </div>
+            <span class="shrink-0 px-2.5 py-1 rounded-full apple-fine-print font-semibold ${isConfirmed(g) ? 'bg-pwc-orange text-white' : 'bg-pwc-soft text-pwc-orange border border-pwc-border'}">${isConfirmed(g) ? '확정' : esc(statusLabel(g))}</span>
+          </div>
+          <div class="flex flex-wrap gap-1">${groupReasons(members).map(t => `<span class="px-2 py-0.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print text-ink">${esc(t)}</span>`).join('')}</div>
+          <ul class="divide-y divide-pwc-border/60">
+            ${members.map(m => `
+              <li class="py-3">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="apple-caption-strong text-ink">${esc(m.name)}${sid(m.id) === sid(me.id) ? ' <span class="text-pwc-orange">(나)</span>' : ''} <span class="apple-fine-print text-muted font-normal">${m.deptOpen ? esc(m.dept) : ''}</span></div>
+                  ${responseOf(g, m.id) === 'yes' ? '<span class="shrink-0 apple-fine-print font-semibold text-pwc-orange">참석 ✓</span>' : `<span class="shrink-0 apple-fine-print text-muted">${isConfirmed(g) ? '참석' : '응답 대기'}</span>`}
+                </div>
+                <div class="apple-fine-print text-muted break-all">${esc(m.email)}</div>
+                <div class="apple-fine-print text-ink mt-1">${esc((m.interests || []).join(' · '))}${m.favoriteThing ? ` <span class="text-muted">/ 요즘: ${esc(m.favoriteThing)}</span>` : ''}</div>
+              </li>`).join('')}
+          </ul>
+          ${isDeadlinePassed(g) || g.locked ? '' : `
+          <div class="pt-1 space-y-2">
+            ${responseOf(g, me.id) === 'yes'
+              ? '<div class="w-full py-3 rounded-full bg-pwc-soft border border-pwc-border text-center apple-caption-strong text-pwc-orange">참석으로 응답했어요 ✓</div>'
+              : '<button onclick="respondAttend()" class="apple-press w-full py-3.5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong transition">참석할게요</button>'}
+            <button onclick="respondPass()" class="w-full py-2.5 rounded-full apple-caption font-semibold text-muted hover:text-ink transition">${responseOf(g, me.id) === 'yes' ? '사정이 생겼어요, 이번 조는 패스할게요' : '이번 조는 패스할게요'}</button>
+          </div>`}
+          <p class="apple-fine-print text-muted">${isConfirmed(g)
+            ? '확정된 조예요. 점심 시간에 맞춰 만나요!'
+            : `조원 모두 참석하면 확정돼요. ${fmtDateTime(groupDeadline(g))}까지 응답이 없으면 참석으로 처리돼요.`}</p>
+        </div><div class="text-center pt-3"><button onclick="forgetMe()" class="apple-fine-print font-semibold text-muted hover:text-red-600 underline">이 기기에서 내 정보 지우기</button></div>`;
+    }
+    function currentMe() {
+      const my = loadMy(); if (!my) return null;
+      const me = responseList.find(r => r.email.toLowerCase() === my.email.toLowerCase());
+      return me && me.code === my.code ? me : null;
+    }
+    function respondAttend() {
+      const me = currentMe(); const g = me && groupOfMember(me.id); if (!g) return;
+      g.responses = g.responses || {};
+      g.responses[sid(me.id)] = 'yes';
+      saveMatchState(); lookupResult(true);
+      showToast(isConfirmed(g) ? '조원 모두 참석이에요. 조가 확정됐어요! 🎉' : '참석으로 응답했어요. 다른 조원의 응답을 기다리고 있어요.');
+    }
+    async function respondPass() {
+      const me = currentMe(); const g = me && groupOfMember(me.id); if (!g) return;
+      const next = matchState.settings.autoOn ? fmtDateTime(nextScheduled()) : '다음 매칭';
+      if (!await openDialog({ title: '이번 조는 패스할까요?', message: `이 조에서 빠지고, ${next} 매칭에서 다른 조를 찾아 드려요. 같은 조원과는 다시 묶이지 않아요.`, okText: '패스하기', danger: true })) return;
+      // 같은 조원 기억 (다음 매칭에서 피함)
+      me.avoid = [...new Set([...(me.avoid || []), ...g.memberIds.map(sid).filter(x => x !== sid(me.id))])];
+      saveResponses();
+      removeFromGroups(me.id);
+      // 1명만 남으면 그 사람도 매칭 대기로
+      const rest = matchState.groups.find(x => x.id === g.id);
+      if (rest && rest.memberIds.length < 2) matchState.groups = matchState.groups.filter(x => x.id !== g.id);
+      saveMatchState(); lookupResult(true);
+      showToast('패스했어요. 다음 매칭에서 다시 찾아 드릴게요.');
+    }
+    async function forgetMe() {
+      if (!await openDialog({ title: '이 기기에서 지우기', message: '이 기기에 저장된 이메일과 확인 코드를 지울까요? 신청 내용과 매칭 결과는 그대로 남아요. 공용 PC라면 지워 주세요.', okText: '지우기', danger: true })) return;
+      try { localStorage.removeItem(MY_KEY); } catch (e) {}
+      document.getElementById('resultEmail').value = '';
+      document.getElementById('resultCode').value = '';
+      document.getElementById('resultBox').innerHTML = '';
+      formData = emptyForm(); paintAll();
+      showToast('이 기기에서 내 정보를 지웠어요.');
+    }
+    function updateLandingNote() {
+      const st = matchState.settings;
+      document.getElementById('landingNote').innerText = st.autoOn
+        ? `신청은 2분이면 끝나요. 매일 ${st.time}에 조를 짜 드려요.`
+        : '신청은 2분이면 끝나요. 결과는 "내 결과 확인하기"에서 볼 수 있어요.';
+    }
+
+    // ===== 샘플 30명 =====
+    function addSampleData() {
+      const depts = ['Audit', 'Tax', 'Deal', 'AX'];
+      const names = ['김회계', '이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저'];
+      const allInterests = INTERESTS.flatMap(g => g[2]);
+      const foods = ['한식', '일식', '중식', '아시안', '양식', '분식', '샐러드', '고기'];
+      const sizeSets = [['3~4명'], ['3~4명', '5명~'], ['2명', '3~4명'], ['5명~'], ['2명']];
+      const pri = [['관심사'], ['다른 부문'], ['관심사', '다른 부문'], ['나이대'], ['음식 취향'], []];
+      const weekdays = fullWeekDays.filter(d => !/(토|일)/.test(d));
+      const pick = (arr, k, seed) => { const out = []; let s = seed; while (out.length < k) { const v = arr[(s * 7919 + 13) % arr.length]; if (!out.includes(v)) out.push(v); s++; } return out; };
+      const stamp = Date.now();
+      for (let i = 1; i <= 30; i++) {
+        // 평일 2~3일, 하루 안에서 연속된 3~4칸(45분~1시간)을 가능 시간으로
+        const days = pick(weekdays, 2 + (i % 2), i * 3);
+        const start = i % 3;
+        const slots = days.flatMap(d => timeSlots15Min.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`));
+        responseList.push({
+          id: stamp + i, name: names[i % names.length] + (Math.floor(i / names.length) + 1),
+          emailId: `sample${i}`, email: `sample${stamp % 10000}_${i}@example.com`,
+          birthYear: String(1990 + (i % 12)), gender: '응답 안 함', dept: depts[i % depts.length], deptOpen: i % 3 !== 0,
+          slots: sortSlots(slots), allergy: '', budget: ['무관', '1~1.5만원', '1만원 이하'][i % 3],
+          foodCategories: pick(foods, 2, i * 5), spicy: ['보통', '약하게', '맵게'][i % 3], groupSizes: sizeSets[i % sizeSets.length],
+          vibe: ['둘 다 좋아요', '차분하게 대화', '활기차게 대화'][i % 3], interests: pick(allInterests, 3, i * 11),
+          favoriteThing: '', code: genCode(), priority: pri[i % pri.length], createdAt: new Date().toISOString(), sample: true
+        });
+      }
+      saveResponses();
+      renderAdmin();
+      showToast('샘플 30명을 추가했어요.');
+    }
+
+    async function clearData() {
+      if (!responseList.length) return showToast('삭제할 응답이 없어요.');
+      if (await openDialog({ title: '응답 전체 삭제', message: '모든 신청 데이터와 편성 결과를 삭제할까요? 되돌릴 수 없어요.', okText: '삭제', danger: true })) {
+        responseList = []; matchState.groups = []; matchState.nextNo = 1; matchState.lastRunSummary = '';
+        saveResponses(); saveMatchState(); renderAdmin();
+        showToast('모든 응답을 삭제했어요.');
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      populateBirthYears();
+      document.getElementById('selectEmailDomain').innerHTML = EMAIL_DOMAINS.map(d => `<option value="${d}">${d}</option>`).join('');
+      buildInterestGroups();
+      renderWhenGrid();
+      setupInteractions();
+      paintAll();
+      saveMatchState();          // 처음 접속 시 설정 기록
+      updateLandingNote();
+      document.getElementById('resultCode').addEventListener('keydown', e => { if (e.key === 'Enter') lookupResult(); });
+      checkAutoMatch();          // 실행 시각이 지났으면 바로 매칭
+      setInterval(checkAutoMatch, 20000); // 열려 있는 동안 20초마다 확인
+      goToStep(0);
+    });
+  </script>
+</body>
+</html>
