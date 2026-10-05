@@ -192,7 +192,7 @@
 (function (root) {
   const M = root.SamilMatching;
   const KEY = 'samil-hankki-demo-v1';
-  const DEMO_EMAIL = 'demo@naver.com';
+  const DEMO_EMAIL = 'demo@example.com';
   const DEMO_CODE = '123456';
   const clone = x => JSON.parse(JSON.stringify(x));
   const nowIso = () => new Date().toISOString();
@@ -235,9 +235,9 @@
       slots: [firstSlot, `${days[0]} 12:15`], food_categories: ['한식', '일식'], interests: ['맛집 탐방', '헬스·러닝', '해외여행'],
       favorite_thing: '주말 러닝 크루', priority: ['관심사', '다른 부문'], sample: false });
     const mates = [
-      add({ email: 'mate1@gmail.com', code: '482913', name: '이세무', birth_year: '1998', dept: 'Tax', slots: [firstSlot], food_categories: ['한식'], interests: ['맛집 탐방', '골프', '독서'], favorite_thing: '을지로 노포 탐방' }),
-      add({ email: 'mate2@naver.com', code: '730145', name: '박재무', birth_year: '2000', dept: 'Deal', dept_open: false, slots: [firstSlot, `${days[1]} 12:00`], food_categories: ['일식'], interests: ['헬스·러닝', '해외여행', '외국어'] }),
-      add({ email: 'mate3@gmail.com', code: '264508', name: '최디지털', birth_year: '1997', dept: 'AX', slots: [firstSlot], food_categories: ['한식', '아시안'], interests: ['맛집 탐방', '게임', '영화·OTT'], favorite_thing: '요즘 보는 드라마' })
+      add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', dept: 'Tax', slots: [firstSlot], food_categories: ['한식'], interests: ['맛집 탐방', '골프', '독서'], favorite_thing: '을지로 노포 탐방' }),
+      add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', dept: 'Deal', dept_open: false, slots: [firstSlot, `${days[1]} 12:00`], food_categories: ['일식'], interests: ['헬스·러닝', '해외여행', '외국어'] }),
+      add({ email: 'mate3@example.com', code: '264508', name: '최디지털', birth_year: '1997', dept: 'AX', slots: [firstSlot], food_categories: ['한식', '아시안'], interests: ['맛집 탐방', '게임', '영화·OTT'], favorite_thing: '요즘 보는 드라마' })
     ];
     const g1 = { id: uid(), no: st.settings.next_no++, slot: firstSlot, locked: false, created_at: nowIso() };
     st.groups.push(g1);
@@ -566,7 +566,7 @@
     <p class="apple-fine-print text-muted leading-relaxed">화면과 매칭 규칙은 실제 서비스와 같아요. 데이터는 이 브라우저에만 임시 저장되고, 이메일은 보내지 않아요.
       실제 서비스: <a class="text-pwc-orange font-semibold underline break-all" href="https://samil-hankki261005.vercel.app" target="_blank" rel="noopener">samil-hankki261005.vercel.app</a></p>
     <div class="flex flex-wrap gap-2">
-      <button type="button" id="demoTryResult" class="apple-press px-3 py-1.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print font-semibold text-ink hover:border-pwc-orange">매칭 결과 바로 보기 · demo@naver.com / 123456</button>
+      <button type="button" id="demoTryResult" class="apple-press px-3 py-1.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print font-semibold text-ink hover:border-pwc-orange">매칭 결과 바로 보기 · demo@example.com / 123456</button>
       <span class="px-3 py-1.5 rounded-full border border-hairline apple-fine-print text-muted">운영자 콘솔: 아무 이메일·비밀번호로 로그인</span>
     </div>
     <p class="apple-fine-print text-muted">2026 Discover 바이브코딩 D-4조 과제 작품이며, 삼일회계법인의 공식 서비스가 아니에요.</p>

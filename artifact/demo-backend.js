@@ -5,7 +5,7 @@
 (function (root) {
   const M = root.SamilMatching;
   const KEY = 'samil-hankki-demo-v1';
-  const DEMO_EMAIL = 'demo@naver.com';
+  const DEMO_EMAIL = 'demo@example.com';
   const DEMO_CODE = '123456';
   const clone = x => JSON.parse(JSON.stringify(x));
   const nowIso = () => new Date().toISOString();
@@ -48,9 +48,9 @@
       slots: [firstSlot, `${days[0]} 12:15`], food_categories: ['한식', '일식'], interests: ['맛집 탐방', '헬스·러닝', '해외여행'],
       favorite_thing: '주말 러닝 크루', priority: ['관심사', '다른 부문'], sample: false });
     const mates = [
-      add({ email: 'mate1@gmail.com', code: '482913', name: '이세무', birth_year: '1998', dept: 'Tax', slots: [firstSlot], food_categories: ['한식'], interests: ['맛집 탐방', '골프', '독서'], favorite_thing: '을지로 노포 탐방' }),
-      add({ email: 'mate2@naver.com', code: '730145', name: '박재무', birth_year: '2000', dept: 'Deal', dept_open: false, slots: [firstSlot, `${days[1]} 12:00`], food_categories: ['일식'], interests: ['헬스·러닝', '해외여행', '외국어'] }),
-      add({ email: 'mate3@gmail.com', code: '264508', name: '최디지털', birth_year: '1997', dept: 'AX', slots: [firstSlot], food_categories: ['한식', '아시안'], interests: ['맛집 탐방', '게임', '영화·OTT'], favorite_thing: '요즘 보는 드라마' })
+      add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', dept: 'Tax', slots: [firstSlot], food_categories: ['한식'], interests: ['맛집 탐방', '골프', '독서'], favorite_thing: '을지로 노포 탐방' }),
+      add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', dept: 'Deal', dept_open: false, slots: [firstSlot, `${days[1]} 12:00`], food_categories: ['일식'], interests: ['헬스·러닝', '해외여행', '외국어'] }),
+      add({ email: 'mate3@example.com', code: '264508', name: '최디지털', birth_year: '1997', dept: 'AX', slots: [firstSlot], food_categories: ['한식', '아시안'], interests: ['맛집 탐방', '게임', '영화·OTT'], favorite_thing: '요즘 보는 드라마' })
     ];
     const g1 = { id: uid(), no: st.settings.next_no++, slot: firstSlot, locked: false, created_at: nowIso() };
     st.groups.push(g1);

@@ -42,7 +42,7 @@ banner = f'''
     <p class="apple-fine-print text-muted leading-relaxed">화면과 매칭 규칙은 실제 서비스와 같아요. 데이터는 이 브라우저에만 임시 저장되고, 이메일은 보내지 않아요.
       실제 서비스: <a class="text-pwc-orange font-semibold underline break-all" href="{LIVE}" target="_blank" rel="noopener">{LIVE.replace('https://', '')}</a></p>
     <div class="flex flex-wrap gap-2">
-      <button type="button" id="demoTryResult" class="apple-press px-3 py-1.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print font-semibold text-ink hover:border-pwc-orange">매칭 결과 바로 보기 · demo@naver.com / 123456</button>
+      <button type="button" id="demoTryResult" class="apple-press px-3 py-1.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print font-semibold text-ink hover:border-pwc-orange">매칭 결과 바로 보기 · demo@example.com / 123456</button>
       <span class="px-3 py-1.5 rounded-full border border-hairline apple-fine-print text-muted">운영자 콘솔: 아무 이메일·비밀번호로 로그인</span>
     </div>
     <p class="apple-fine-print text-muted">2026 Discover 바이브코딩 D-4조 과제 작품이며, 삼일회계법인의 공식 서비스가 아니에요.</p>

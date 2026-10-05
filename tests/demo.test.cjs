@@ -21,7 +21,7 @@ const { DEMO_EMAIL, DEMO_CODE } = win.SamilDemo
   ok((await sb.rpc('get_my_result', { p_email: DEMO_EMAIL, p_code: '000000' })).data.ok === false, '틀린 코드 거부')
   ok((await sb.from('applications').select('*')).error, '로그인 전에는 신청 목록 조회 불가 (RLS 흉내)')
 
-  const form = { email: 'judge@naver.com', name: '심사위원', dept: 'Audit', slots: [r.data.group.slot], interests: ['독서'], group_sizes: ['3~4명'] }
+  const form = { email: 'judge@example.com', name: '심사위원', dept: 'Audit', slots: [r.data.group.slot], interests: ['독서'], group_sizes: ['3~4명'] }
   const sub = (await sb.rpc('submit_application', { p_form: form, p_code: null })).data
   ok(sub.ok && /^\d{6}$/.test(sub.code), '새 신청 → 6자리 코드')
   ok((await sb.rpc('submit_application', { p_form: form, p_code: null })).data.reason === 'exists', '같은 이메일 코드 없이 재신청 → 거부')
