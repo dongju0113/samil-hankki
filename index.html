@@ -725,7 +725,8 @@
     // ===== 설정값 =====
     // 날짜·시간표와 매칭 규칙은 matching.js 한 곳에서 관리 (서버 자동 매칭과 공유)
     const M = SamilMatching;
-    const { fullWeekDays, timeSlots15Min, sid } = M;
+    const { timeSlots15Min, sid } = M;
+    const fullWeekDays = M.dayWindow();   // 오늘부터 2주 (한국 시간 기준, 접속할 때마다 새로 계산)
     const INTERESTS = [
       ['🏃‍♂️', '운동', ['헬스·러닝', '골프', '테니스·배드민턴', '등산', '기타 운동']],
       ['🍽️', '먹거리', ['맛집 탐방', '카페·디저트', '요리·와인']],

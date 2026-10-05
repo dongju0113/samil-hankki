@@ -1,21 +1,24 @@
 // 삼일한끼 매칭 규칙 — 화면(index.html)과 서버 자동 매칭(api/cron-match.js)이 이 파일 하나를 같이 씁니다.
 // 매칭 규칙을 바꾸려면 이 파일만 고치면 돼요.
 (function (root) {
-  const fullWeekDays = [
-    '10/5(월)', '10/6(화)', '10/7(수)', '10/8(목)', '10/9(금)', '10/10(토)', '10/11(일)',
-    '10/12(월)', '10/13(화)', '10/14(수)', '10/15(목)', '10/16(금)', '10/17(토)', '10/18(일)'
-  ];
+  const DAYS_SHOWN = 14;              // 일정표: 오늘부터 2주
   const timeSlots15Min = ['11:30', '11:45', '12:00', '12:15', '12:30', '12:45', '13:00'];
-  const EVENT_YEAR = 2026;           // supabase/01_schema.sql의 _slot_ts와 같게 유지
+  const EVENT_YEAR = 2026;           // 날짜 표기("10/7(수)")에 연도가 없어 이 연도로 계산. supabase/01_schema.sql의 _slot_ts와 같게 유지
   const KST_MS = 9 * 60 * 60000;     // 시간 계산은 항상 한국 시간 기준 (서버는 UTC로 돌기 때문)
 
   const sid = x => String(x);
 
   // ===== 날짜·시간 =====
-  function slotKeyOrder(s) {
-    const [d, t] = s.split(' ');
-    return fullWeekDays.indexOf(d) * 100 + timeSlots15Min.indexOf(t);
+  // 일정표에 보여 줄 날짜: 한국 시간 기준 오늘부터 DAYS_SHOWN일. 예) ['10/5(월)', '10/6(화)', ...]
+  function dayWindow(now = new Date(), days = DAYS_SHOWN) {
+    const k = new Date(now.getTime() + KST_MS);
+    return Array.from({ length: days }, (_, i) => {
+      const d = new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate() + i));
+      return `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${'일월화수목금토'[d.getUTCDay()]})`;
+    });
   }
+  // 시간순 정렬 기준
+  function slotKeyOrder(s) { return slotDate(s).getTime(); }
   function slotDate(slot) {
     // "10/7(수) 12:00" → 2026-10-07 12:00 (한국 시간)
     const m = slot.match(/^(\d+)\/(\d+)\(.\) (\d+):(\d+)$/);
@@ -97,7 +100,10 @@
     const unassigned = new Set(responses.filter(r => !assigned.has(sid(r.id))).map(r => sid(r.id)));
     const before = unassigned.size;
     const openOf = r => openSlotsOf(r, settings, now);
-    const allSlots = fullWeekDays.flatMap(d => timeSlots15Min.map(t => `${d} ${t}`)).filter(s => isSlotOpen(s, settings, now));
+    // 신청자들이 고른 칸 중 아직 마감 전인 칸을 시간순으로 (일정표가 하루씩 밀려도 예전에 고른 칸까지 처리)
+    const allSlots = [...new Set(responses.flatMap(r => r.slots || []))]
+      .filter(s => isSlotOpen(s, settings, now))
+      .sort((a, b) => slotKeyOrder(a) - slotKeyOrder(b));
     const formed = [];
 
     // 1차: 3명 이상 모이는 칸 → 2차: 2명 이상 모이는 칸
@@ -164,7 +170,7 @@
   }
 
   root.SamilMatching = {
-    fullWeekDays, timeSlots15Min, EVENT_YEAR, sid,
+    dayWindow, timeSlots15Min, EVENT_YEAR, sid,
     slotKeyOrder, slotDate, fmtDateTime, lastScheduledBefore, isSlotOpen, openSlotsOf,
     groupDeadline, isDeadlinePassed, responseOf, yesCount, isConfirmed, computeMatching
   };
