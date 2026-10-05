@@ -1,5 +1,9 @@
 {
   "crons": [
-    { "path": "/api/cron-match", "schedule": "0 13 * * *" }
-  ]
+    { "path": "/api/cron-match", "schedule": "0 13 * * *" },
+    { "path": "/api/notify-matched", "schedule": "0 14 * * *" }
+  ],
+  "functions": {
+    "api/*.js": { "maxDuration": 60 }
+  }
 }

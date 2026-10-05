@@ -1252,6 +1252,7 @@
       if (!await loadAll()) { isAdmin = false; return false; }
       goToStep(6);
       checkAutoMatch();
+      notifyMatched(true);   // 자동 매칭 때 못 보낸 매칭 메일이 있으면 이어서 발송
       return true;
     }
     async function exitAdmin() {
@@ -1313,6 +1314,29 @@
       renderAdmin();
       if (error) return showToast('매칭 결과를 저장하지 못했어요: ' + error.message);
       showToast(result.before ? result.summary : '매칭을 기다리는 신청자가 없어요.');
+      if (result.newGroups.length || result.joins.length) notifyMatched();
+    }
+    // 매칭 메일: 새로 조가 정해진 사람에게 발송 (서버 함수 api/notify-matched.js, 운영자 로그인 확인 후)
+    // 한 번에 다 못 보내면 남은 사람이 없을 때까지 이어서 호출. 실패해도 23시 추가 발송에서 다시 보냄
+    async function notifyMatched(silent = false) {
+      if (!location.protocol.startsWith('http')) return;   // 파일을 직접 연 테스트에서는 발송 안 함
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) return;
+      let total = 0;
+      for (let round = 0; round < 10; round++) {
+        let r;
+        try {
+          const res = await fetch('/api/notify-matched', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } });
+          r = await res.json();
+          if (!res.ok) throw new Error(r.error || res.status);
+        } catch (e) {
+          if (!silent) showToast('매칭 메일을 보내지 못했어요. 23시 추가 발송 때 다시 보내요.');
+          return;
+        }
+        total += r.sent;
+        if (!silent && (r.sent || r.remaining)) showToast(`📧 매칭 메일 ${total}통 보냄${r.remaining ? ` · 남은 ${r.remaining}명 보내는 중…` : ''}`);
+        if (!r.remaining || !r.sent) break;
+      }
     }
     // deptCount: 내 결과 화면에서는 비공개 부문을 내려받지 않으므로 서버가 센 부문 수를 사용
     function groupReasons(members, deptCount) {
@@ -1333,7 +1357,8 @@
       const msg = g
         ? (r.slots.includes(g.slot) ? `${r.name}님을 ${g.no}조로 옮겼어요.` : `⚠️ ${r.name}님이 고르지 않은 시간(${g.slot})이에요. 본인에게 따로 확인해 주세요.`)
         : `${r.name}님을 매칭 대기로 뺐어요.`;
-      await adminSave(sb.rpc('admin_move_member', { p_app: sid(id), p_target: target || null }), msg);
+      const ok = await adminSave(sb.rpc('admin_move_member', { p_app: sid(id), p_target: target || null }), msg);
+      if (ok && g) notifyMatched(true);   // 새 조로 옮겨진 사람에게 매칭 메일
     }
     async function toggleLock(groupId) {
       const g = matchState.groups.find(x => x.id === groupId); if (!g) return;

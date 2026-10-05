@@ -58,6 +58,9 @@ demo_script = '''
       el.className = 'apple-fine-print text-muted';
       el.innerText = '📧 실제 서비스에서는 이 코드가 ' + email + '로 메일 발송돼요. (데모에서는 보내지 않아요)';
     };
+    window.notifyMatched = async function (silent) {
+      if (!silent) showToast('📧 실제 서비스에서는 새로 조가 정해진 조원에게 매칭 메일이 발송돼요. (데모에서는 보내지 않아요)');
+    };
     document.getElementById('demoTryResult').addEventListener('click', () => {
       try { localStorage.setItem(MY_KEY, JSON.stringify({ email: SamilDemo.DEMO_EMAIL, code: SamilDemo.DEMO_CODE })); } catch (e) {}
       goToStep(7);

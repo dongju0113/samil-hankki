@@ -131,6 +131,9 @@ ok((await q(`select count(*)::int n from public.applications`))[0].n === 0, '응
 
 console.log('\n[서버 자동 매칭 service_role]')
 await db.exec(`reset role;`); await db.exec(fs.readFileSync(new URL('03_allow_cron.sql', PROJ), 'utf8')); console.log('  03 재실행 OK')
+ok((await q(`select count(*)::int n from information_schema.columns where table_name='group_members' and column_name='notified_at'`))[0].n === 1, '매칭 메일 발송 기록 칸(notified_at) 있음')
+await db.exec(`reset role;`); await db.exec(fs.readFileSync(new URL('04_match_mail.sql', PROJ), 'utf8')); await db.exec(fs.readFileSync(new URL('04_match_mail.sql', PROJ), 'utf8'))
+ok((await q(`select count(*)::int n from public.group_members where notified_at is null`))[0].n === 0, '04 실행: 기존 조원은 발송한 것으로 처리 (두 번 실행해도 OK)')
 await db.exec(`reset role; grant all on all tables in schema public to service_role;`)
 await as('anon')
 await submit(form('s@gmail.com'))
