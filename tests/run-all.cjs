@@ -28,6 +28,7 @@ step('매칭 규칙', () => run('matching.test.cjs'))
 step('자동 매칭 서버 함수', () => run('cron.test.cjs'))
 step('메일 발송 서버 함수', () => run('mail.test.cjs'))
 step('매칭 메일', () => run('notify.test.cjs'))
+step('카카오톡(안드로이드) 외부 브라우저 열기', () => run('kakao.test.cjs'))
 step('백업 데모 가짜 저장소', () => run('demo.test.cjs'))
 step('Supabase SQL (RLS·함수)', () => {
   if (!fs.existsSync(path.join(__dirname, 'node_modules', '@electric-sql'))) throw new Error('tests 폴더에서 먼저 npm install 하세요')

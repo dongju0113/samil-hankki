@@ -6,6 +6,15 @@
   <meta name="color-scheme" content="light">
   <title>삼일한끼 - 사내 점심 네트워킹</title>
   <!-- Tailwind CSS CDN -->
+  <script>
+    // 안드로이드 카카오톡 내장 브라우저는 한글 입력이 잘 안 됨 → 휴대폰 기본 브라우저(크롬·삼성 인터넷)로 자동으로 다시 열기
+    // (카카오톡이 지원하는 kakaotalk://web/openExternal 사용. 아이폰 카카오톡은 입력이 잘 돼서 그대로 둠)
+    window.IS_KAKAO_ANDROID = /KAKAOTALK/i.test(navigator.userAgent) && /Android/i.test(navigator.userAgent);
+    window.openInExternalBrowser = function () {
+      location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+    };
+    if (window.IS_KAKAO_ANDROID) window.openInExternalBrowser();
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Supabase (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -273,10 +282,22 @@
     @media (prefers-reduced-motion: reduce) { .waiting-dot { animation: none; } }
       /* 휴대폰: 입력 칸 글자가 16px보다 작으면 아이폰이 누를 때마다 화면을 확대해서 입력이 꼬임 → 16px로 */
     @media (max-width: 767px) { input, select, textarea { font-size: 16px !important; } }
+      /* 안드로이드 카카오톡 안내 띠 */
+    .kakao-banner { width: 100%; max-width: 640px; margin: 0 auto 16px; padding: 14px 16px; border-radius: 18px; background: #3B2418; color: #FFF5EE; font-size: 13.5px; line-height: 1.5; display: grid; gap: 10px; }
+    .kakao-banner[hidden] { display: none; }
+    .kakao-banner b { color: #FFD5BC; }
+    .kakao-banner button { justify-self: start; padding: 9px 16px; border-radius: 999px; border: none; background: #FEE500; color: #191919; font-weight: 800; font-size: 14px; cursor: pointer; }
+    .kakao-banner .kakao-sub { font-size: 12px; opacity: .85; }
   </style>
 </head>
 <body class="min-h-screen py-6 md:py-12 px-5 flex flex-col items-center">
 
+  <!-- 안드로이드 카카오톡에서 자동으로 넘어가지 않았을 때만 보이는 안내 -->
+  <div id="kakaoBanner" class="kakao-banner" hidden>
+    <p><b>카카오톡 안에서는 한글 입력이 잘 안 될 수 있어요.</b><br>크롬이나 삼성 인터넷에서 열어 주세요.</p>
+    <button type="button" onclick="openInExternalBrowser()">다른 브라우저로 열기</button>
+    <p class="kakao-sub">버튼이 안 되면 오른쪽 아래 <b>⋮</b> → <b>다른 브라우저로 열기</b></p>
+  </div>
   <main class="w-full max-w-[640px] mx-auto">
 
     <!-- 상단 글로벌 헤더 -->
@@ -1824,6 +1845,7 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('kakaoBanner').hidden = !window.IS_KAKAO_ANDROID;
       populateBirthYears();
       document.getElementById('selectEmailDomain').innerHTML = EMAIL_DOMAINS.map(d => `<option value="${d}">${d}</option>`).join('');
       renderWhenGrid();
