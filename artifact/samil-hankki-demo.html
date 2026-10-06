@@ -903,6 +903,19 @@
     .contact-box { display: grid; gap: 2px; padding: 12px 14px; border-radius: 16px; background: #FFF6EE; border: 1px solid #F3D9C6; font-size: 13px; color: #7A5646; line-height: 1.5; }
     .contact-box b { color: #3B2418; font-size: 14px; }
     .contact-box.mine { background: #FFF1D6; border-color: #F6CF86; }
+      /* 날짜·시간 표: 휴대폰 화면 너비에 7일이 다 들어가고, 칸 위에서 손가락으로 문지르면 선택 (표 스크롤 대신) */
+    .when-grid-wrap { min-width: 0; }
+    #whenTable { table-layout: fixed; }
+    #whenTable th:first-child { width: 46px; }
+    #whenGridBody td:first-child { padding-left: 6px !important; padding-right: 2px !important; }
+    #whenGridBody .slot-cell { touch-action: none; }
+    /* MBTI 4줄 선택 */
+    .mbti-row-hidden { display: none !important; }
+    .mbti-row { animation: seq-in .3s ease both; }
+    .mbti-letter { font-family: "Jua", sans-serif; font-weight: 400; font-size: 17px; margin-right: 2px; }
+    .mbti-preview { margin-top: 10px; display: inline-block; padding: 6px 14px; border-radius: 999px; background: #3B2418; color: #FFF5EE; font-family: "Jua", sans-serif; font-size: 16px; letter-spacing: 1px; }
+    .mbti-preview[hidden] { display: none; }
+    @media (prefers-reduced-motion: reduce) { .mbti-row { animation: none; } }
   </style>
 <div class="min-h-screen py-6 md:py-12 px-5 flex flex-col items-center">
 
@@ -962,7 +975,6 @@
           </div>
           <h1 class="hk-title hk-display">오늘 점심,<br><span>누구랑 먹지?</span></h1>
           <p class="hk-lead">감사 · 택스 · 딜 · AX, 부서 상관없이<br>한 끼 메이트를 매칭해 드려요.<br>밥 한 끼로 시작하는 새로운 인연!</p>
-          <button type="button" class="hk-cta hk-display" onclick="goToStep(1)" aria-label="한끼 매칭 시작하기"><span aria-hidden="true"><span class="cta-ch hot" style="--d:0.30s">한</span><span class="cta-ch hot" style="--d:0.35s">끼</span><span class="cta-ch" style="--d:0.40s"> </span><span class="cta-ch" style="--d:0.45s">매</span><span class="cta-ch" style="--d:0.50s">칭</span><span class="cta-ch" style="--d:0.55s"> </span><span class="cta-ch" style="--d:0.60s">시</span><span class="cta-ch" style="--d:0.65s">작</span><span class="cta-ch" style="--d:0.70s">하</span><span class="cta-ch" style="--d:0.75s">기</span></span></button>
           <button type="button" class="hk-link" onclick="goToStep(7)">이미 신청했어요 · 내 결과 확인하기</button>
           <p class="waiting-pill" data-waiting-wrap hidden><span class="waiting-dot" aria-hidden="true"></span><span data-waiting-count></span></p>
         </div>
@@ -1073,25 +1085,27 @@
         </div>
 
         <div class="seq-field seq-hidden" data-seq="5">
-          <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">MBTI <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span></label>
-          <div class="grid grid-cols-4 gap-2">
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ISTJ">ISTJ</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ISFJ">ISFJ</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="INFJ">INFJ</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="INTJ">INTJ</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ISTP">ISTP</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ISFP">ISFP</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="INFP">INFP</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="INTP">INTP</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ESTP">ESTP</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ESFP">ESFP</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ENFP">ENFP</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ENTP">ENTP</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ESTJ">ESTJ</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ESFJ">ESFJ</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ENFJ">ENFJ</button>
-            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ENTJ">ENTJ</button>
+          <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">MBTI <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span></label>
+          <p class="apple-fine-print text-muted mb-2">한 줄씩 하나를 골라 주세요 (총 4번)</p>
+          <div class="space-y-2" id="mbtiRows">
+            <div class="mbti-row grid grid-cols-2 gap-2" data-axis="0">
+              <button type="button" class="apple-press mbti-axis-btn py-3 rounded-2xl border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-axis="0" data-val="E"><b class="mbti-letter">E</b> 외향</button>
+              <button type="button" class="apple-press mbti-axis-btn py-3 rounded-2xl border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-axis="0" data-val="I"><b class="mbti-letter">I</b> 내향</button>
+            </div>
+            <div class="mbti-row grid grid-cols-2 gap-2 mbti-row-hidden" data-axis="1">
+              <button type="button" class="apple-press mbti-axis-btn py-3 rounded-2xl border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-axis="1" data-val="S"><b class="mbti-letter">S</b> 감각</button>
+              <button type="button" class="apple-press mbti-axis-btn py-3 rounded-2xl border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-axis="1" data-val="N"><b class="mbti-letter">N</b> 직관</button>
+            </div>
+            <div class="mbti-row grid grid-cols-2 gap-2 mbti-row-hidden" data-axis="2">
+              <button type="button" class="apple-press mbti-axis-btn py-3 rounded-2xl border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-axis="2" data-val="T"><b class="mbti-letter">T</b> 사고</button>
+              <button type="button" class="apple-press mbti-axis-btn py-3 rounded-2xl border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-axis="2" data-val="F"><b class="mbti-letter">F</b> 감정</button>
+            </div>
+            <div class="mbti-row grid grid-cols-2 gap-2 mbti-row-hidden" data-axis="3">
+              <button type="button" class="apple-press mbti-axis-btn py-3 rounded-2xl border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-axis="3" data-val="J"><b class="mbti-letter">J</b> 판단</button>
+              <button type="button" class="apple-press mbti-axis-btn py-3 rounded-2xl border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-axis="3" data-val="P"><b class="mbti-letter">P</b> 인식</button>
+            </div>
           </div>
+          <p id="mbtiPreview" class="mbti-preview" hidden></p>
         </div>
 
         <div class="seq-field seq-hidden" data-seq="6">
@@ -1152,7 +1166,7 @@
           <div class="mb-3"></div>
 
           <div id="gridScrollContainer" class="overflow-x-auto overflow-y-auto max-h-[400px] no-scrollbar border border-pwc-border rounded-xl bg-pwc-canvas/30 p-2 user-select-none">
-            <div class="min-w-[480px]">
+            <div class="when-grid-wrap">
               <table id="whenTable" class="w-full text-center text-xs border-collapse">
                 <thead class="sticky top-0 bg-pwc-soft z-20">
                   <tr id="whenHeadRow" class="text-muted font-semibold border-b border-pwc-border shadow-sm">
@@ -1384,7 +1398,7 @@
       const [myId, myDomain] = my ? my.email.split('@') : ['', ''];
       return {
         name: '', emailId: myId || '', emailDomain: EMAIL_DOMAINS.includes(myDomain) ? myDomain : EMAIL_DOMAINS[0], birthYear: '', gender: '', dept: '',
-        mbti: '', wantGenders: [], wantDepts: [], groupSizes: ['3~4명'], slots: []
+        mbti: '', mbtiParts: ['', '', '', ''], wantGenders: [], wantDepts: [], groupSizes: ['3~4명'], slots: []
       };
     }
     let formData = emptyForm();
@@ -1529,8 +1543,8 @@
       const head = document.getElementById('whenHeadRow');
       fullWeekDays.forEach(d => {
         const th = document.createElement('th');
-        th.className = 'py-2 px-1 whitespace-nowrap' + (/(토|일)/.test(d) ? ' text-pwc-orange' : '');
-        th.innerText = d;
+        th.className = 'py-2 px-0.5 leading-tight' + (/(토|일)/.test(d) ? ' text-pwc-orange' : '');
+        th.innerHTML = d.replace('(', '<br>(');   // "10/6<br>(화)" — 휴대폰 화면 너비에 7일이 다 들어가도록 두 줄
         head.appendChild(th);
       });
       const tbody = document.getElementById('whenGridBody');
@@ -1541,31 +1555,30 @@
         </tr>`).join('');
 
       const grid = document.getElementById('gridScrollContainer');
-      let dragging = false, dragMode = null, lastPointer = 'mouse';
-
-      // PC(마우스): 누른 채 드래그로 여러 칸 선택/해제
+      let dragging = false, dragMode = null, lastCell = null;
+      // PC(마우스)·휴대폰(손가락) 공통: 누른 채 문지르면 여러 칸 선택/해제, 한 번 누르면 한 칸
+      // 휴대폰은 손가락이 지나간 칸을 위치로 찾음 (터치는 처음 누른 칸에 이벤트가 묶이기 때문)
       grid.addEventListener('pointerdown', e => {
-        lastPointer = e.pointerType;
-        if (e.pointerType !== 'mouse' || e.button !== 0) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
         const cell = e.target.closest('.slot-cell'); if (!cell) return;
         e.preventDefault();
+        if (e.target.hasPointerCapture && e.target.hasPointerCapture(e.pointerId)) e.target.releasePointerCapture(e.pointerId);
         dragging = true;
         dragMode = formData.slots.includes(cell.dataset.slot) ? 'deselect' : 'select';
+        lastCell = cell;
         setSlot(cell, dragMode === 'select');
       });
-      grid.addEventListener('pointerover', e => {
+      grid.addEventListener('pointermove', e => {
         if (!dragging) return;
-        const cell = e.target.closest('.slot-cell'); if (!cell) return;
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const cell = el && el.closest('.slot-cell');
+        if (!cell || cell === lastCell) return;
+        lastCell = cell;
         setSlot(cell, dragMode === 'select');
       });
-      window.addEventListener('pointerup', () => { dragging = false; dragMode = null; });
-
-      // 휴대폰(터치): 탭 한 번 = 한 칸 선택/해제. 드래그는 표 스크롤로 사용
-      grid.addEventListener('click', e => {
-        if (lastPointer === 'mouse') return;
-        const cell = e.target.closest('.slot-cell'); if (!cell) return;
-        setSlot(cell, !formData.slots.includes(cell.dataset.slot));
-      });
+      const endDrag = () => { dragging = false; dragMode = null; lastCell = null; };
+      window.addEventListener('pointerup', endDrag);
+      window.addEventListener('pointercancel', endDrag);
       // 키보드: Enter / Space
       grid.addEventListener('keydown', e => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -1610,9 +1623,22 @@
         b.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
     }
+    // MBTI 4줄: 고른 줄까지 + 다음 줄 하나만 보이고, 다 고르면 완성된 MBTI 표시
+    function paintMbti() {
+      const parts = formData.mbti ? formData.mbti.split('') : formData.mbtiParts;
+      formData.mbtiParts = [...parts];
+      document.querySelectorAll('#mbtiRows .mbti-row').forEach(row => {
+        const n = Number(row.dataset.axis);
+        row.classList.toggle('mbti-row-hidden', n > 0 && !parts.slice(0, n).every(Boolean));
+      });
+      document.querySelectorAll('.mbti-axis-btn').forEach(b => highlightActiveBtn(b, parts[Number(b.dataset.axis)] === b.dataset.val));
+      const pv = document.getElementById('mbtiPreview');
+      pv.hidden = !formData.mbti;
+      pv.textContent = formData.mbti ? `${formData.mbti} 완성!` : '';
+    }
     function paintAll() {
       paintDept(); paintGrid();
-      document.querySelectorAll('.mbti-btn').forEach(b => highlightActiveBtn(b, formData.mbti === b.dataset.val));
+      paintMbti();
       const multi = { '.group-size-multi-btn': 'groupSizes', '.want-gender-btn': 'wantGenders', '.want-dept-btn': 'wantDepts' };
       Object.entries(multi).forEach(([sel, key]) => document.querySelectorAll(sel).forEach(b => highlightActiveBtn(b, formData[key].includes(b.dataset.val))));
       document.getElementById('inputName').value = formData.name;
@@ -1626,11 +1652,13 @@
     function setupInteractions() {
       document.querySelectorAll('.dept-seg-btn').forEach(btn => btn.addEventListener('click', () => { formData.dept = btn.dataset.val; paintDept(); }));
 
-      // MBTI: 하나만 선택
-      document.querySelectorAll('.mbti-btn').forEach(btn => btn.addEventListener('click', () => {
-        formData.mbti = btn.dataset.val;
-        document.querySelectorAll('.mbti-btn').forEach(b => highlightActiveBtn(b, b === btn));
-        seqNext(5);
+      // MBTI: E/I → S/N → T/F → J/P 한 줄씩 골라서 완성
+      document.querySelectorAll('.mbti-axis-btn').forEach(btn => btn.addEventListener('click', () => {
+        const axis = Number(btn.dataset.axis);
+        formData.mbtiParts[axis] = btn.dataset.val;
+        formData.mbti = formData.mbtiParts.every(Boolean) ? formData.mbtiParts.join('') : '';
+        paintMbti();
+        if (formData.mbti) seqNext(5);
       }));
 
       // 원하는 조원 성별·부문: 여러 개 선택. "상관없음"을 고르면 나머지는 해제, 다른 걸 고르면 "상관없음" 해제
@@ -1687,7 +1715,7 @@
         if (!formData.gender) { flag('selectGender'); return '성별을 골라 주세요.'; }
         if (!/^[A-Za-z0-9._-]+$/.test(formData.emailId)) { flag('emailBox'); return '이메일의 @ 앞부분을 영문·숫자로 입력해 주세요.'; }
         if (!formData.dept) return '소속 부문·본부를 골라 주세요.';
-        if (!formData.mbti) return 'MBTI를 골라 주세요.';
+        if (!formData.mbti) return 'MBTI 4가지를 모두 골라 주세요.';
         if (!formData.wantGenders.length) return '원하는 조원 성별을 골라 주세요.';
         if (!formData.wantDepts.length) return '원하는 조원 부문을 골라 주세요.';
         if (!formData.groupSizes.length) return '희망 인원을 골라 주세요.';
@@ -1712,7 +1740,7 @@
           [2, !formData.gender, '성별을 골라 주세요.', 'selectGender'],
           [3, !/^[A-Za-z0-9._-]+$/.test(formData.emailId), '이메일의 @ 앞부분을 영문·숫자로 입력해 주세요.', 'emailBox'],
           [4, !formData.dept, '소속 부문·본부를 골라 주세요.'],
-          [5, !formData.mbti, 'MBTI를 골라 주세요.'],
+          [5, !formData.mbti, 'MBTI 4가지를 모두 골라 주세요.'],
           [6, !formData.wantGenders.length, '원하는 조원 성별을 골라 주세요.'],
           [7, !formData.wantDepts.length, '원하는 조원 부문을 골라 주세요.']
         ];
