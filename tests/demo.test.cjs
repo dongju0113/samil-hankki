@@ -20,6 +20,7 @@ const { DEMO_EMAIL, DEMO_CODE } = win.SamilDemo
   ok(r.data.group.members.some(m => m.name === '이*무') && r.data.group.members.some(m => m.name === '김삼일'), '조원 이름은 가림(이*무), 내 이름은 그대로')
   ok(r.data.group.members.every(m => m.mbti && m.gender && m.birthYear && m.dept && m.email), '조원 정보: MBTI·성별·출생연도·부문·이메일')
   ok(typeof (await sb.rpc('get_waiting_count')).data === 'number', '매칭 대기 인원')
+  ok(r.data.group.contactId === r.data.me.id, '체험 계정이 연락 담당으로 시작')
   ok((await sb.rpc('get_my_result', { p_email: DEMO_EMAIL, p_code: '000000' })).data.ok === false, '틀린 코드 거부')
   ok((await sb.from('applications').select('*')).error, '로그인 전에는 신청 목록 조회 불가 (RLS 흉내)')
 
@@ -33,6 +34,8 @@ const { DEMO_EMAIL, DEMO_CODE } = win.SamilDemo
   ok((await sb.rpc('respond_pass', { p_email: DEMO_EMAIL, p_code: DEMO_CODE })).data.ok, '패스 응답')
   r = await sb.rpc('get_my_result', { p_email: DEMO_EMAIL, p_code: DEMO_CODE })
   ok(r.data.ok && r.data.group === null, '패스 후 매칭 대기')
+  const st0 = win.SamilDemo._state()
+  ok(st0.groups.every(g => st0.members.some(m => m.group_id === g.id && m.application_id === g.contact_id)), '모든 조의 연락 담당은 그 조의 조원 (담당이 패스하면 다시 지목)')
 
   await sb.auth.signInWithPassword({ email: 'admin@demo', password: 'x' })
   ok((await sb.rpc('is_admin')).data === true, '운영자 로그인 (데모)')

@@ -12,6 +12,14 @@ const CHUNK = 100;              // in.(...) 한 번에 넣는 id 수
 
 function chunks(arr, n) { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; }
 
+// 연락 담당 안내 (조마다 무작위 1명, DB가 정함)
+function contactLine(me, group, mates) {
+  if (!group.contact_id) return [];
+  if (group.contact_id === me.id) return ['■ 연락 담당: 나! 점심 전에 조원들에게 먼저 연락해 주세요 (조원 이메일은 결과 화면에서 확인)'];
+  const c = mates.find(m => m.id === group.contact_id);
+  return c ? [`■ 연락 담당: ${M.maskName(c.name)}님이 먼저 연락드릴 거예요`] : [];
+}
+
 function composeText({ me, group, mates, deadline, appUrl }) {
   // 조원 이름은 가려서 (최*주), 부문·MBTI 함께
   const mateLine = mates.length
@@ -22,6 +30,7 @@ function composeText({ me, group, mates, deadline, appUrl }) {
     '',
     `■ ${group.no}조 · ${group.slot} 시작 · ${mates.length + 1}명`,
     `■ 함께하는 동기: ${mateLine}`,
+    ...contactLine(me, group, mates),
     group.locked
       ? '■ 운영자가 확정한 조예요.'
       : `■ 응답 마감: ${M.fmtDateTime(deadline)} (마감까지 응답이 없으면 참석으로 처리돼요)`,

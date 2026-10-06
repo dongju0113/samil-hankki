@@ -349,7 +349,7 @@ begin
     'me', jsonb_build_object('id', a.id, 'name', a.name, 'email', a.email,
                              'slots', to_jsonb(a.slots), 'createdAt', a.created_at),
     'group', case when g.id is null then null else jsonb_build_object(
-               'id', g.id, 'no', g.no, 'slot', g.slot, 'locked', g.locked, 'members', v_members) end
+               'id', g.id, 'no', g.no, 'slot', g.slot, 'locked', g.locked, 'contactId', g.contact_id, 'members', v_members) end
   );
 end;
 $$;
@@ -524,6 +524,55 @@ begin
   update public.settings set next_no = 1, last_run_summary = '' where id = 1;
 end;
 $$;
+
+-- ---------------------------------------------------------------------
+-- 6-1. 조 연락 담당
+-- ---------------------------------------------------------------------
+-- 조마다 연락 담당 1명 (무작위). 조원이 바뀔 때마다 자동으로 확인:
+--  - 담당이 없거나, 담당이 조에서 빠졌으면(패스·이동·재신청) 남은 조원 중 무작위로 다시 지목
+--  - 새 조는 조원을 한 번에 넣은 뒤 지목하므로 조원 전체 중 무작위
+alter table public.groups add column if not exists contact_id uuid;
+
+create or replace function public._ensure_contact(p_group uuid)
+returns void
+language sql security definer set search_path = ''
+as $$
+  update public.groups g
+     set contact_id = (select m.application_id from public.group_members m
+                        where m.group_id = p_group order by random() limit 1)
+   where g.id = p_group
+     and (g.contact_id is null
+          or not exists (select 1 from public.group_members m
+                          where m.group_id = p_group and m.application_id = g.contact_id));
+$$;
+
+create or replace function public._group_contact_stmt()
+returns trigger
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_gid uuid;
+begin
+  for v_gid in select distinct group_id from changed loop
+    perform public._ensure_contact(v_gid);
+  end loop;
+  return null;
+end;
+$$;
+
+drop trigger if exists group_members_contact_ins on public.group_members;
+create trigger group_members_contact_ins
+  after insert on public.group_members
+  referencing new table as changed
+  for each statement execute function public._group_contact_stmt();
+
+drop trigger if exists group_members_contact_del on public.group_members;
+create trigger group_members_contact_del
+  after delete on public.group_members
+  referencing old table as changed
+  for each statement execute function public._group_contact_stmt();
+
+revoke execute on function public._ensure_contact(uuid), public._group_contact_stmt() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------
 -- 7. 함수 실행 권한

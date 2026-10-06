@@ -4,7 +4,7 @@
 // - 규칙은 supabase/01_schema.sql의 함수들과 같게 맞춤 (신청·내 결과·참석·패스·운영자 저장)
 (function (root) {
   const M = root.SamilMatching;
-  const KEY = 'samil-hankki-demo-v3';
+  const KEY = 'samil-hankki-demo-v4';
   const DEMO_EMAIL = 'demo@example.com';
   const DEMO_CODE = '123456';
   const clone = x => JSON.parse(JSON.stringify(x));
@@ -50,7 +50,7 @@
       add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', gender: '여성', dept: 'Deal', mbti: 'ISTJ', slots: [firstSlot, `${days[1]} 12:00`] }),
       add({ email: 'mate3@example.com', code: '264508', name: '최디지털', birth_year: '1997', gender: '남성', dept: 'AX', mbti: 'ENTP', slots: [firstSlot] })
     ];
-    const g1 = { id: uid(), no: st.settings.next_no++, slot: firstSlot, locked: false, created_at: nowIso() };
+    const g1 = { id: uid(), no: st.settings.next_no++, slot: firstSlot, locked: false, contact_id: me.id, created_at: nowIso() };   // 체험 계정이 연락 담당
     st.groups.push(g1);
     [me, ...mates].forEach((m, i) => st.members.push({ application_id: m.id, group_id: g1.id, response: i === 1 || i === 3 ? 'yes' : 'pending', added_at: nowIso(), seq: ++st.seq }));
 
@@ -110,6 +110,14 @@
   }
   function dropIfEmpty(gid) {
     if (gid && !state.members.some(m => m.group_id === gid)) state.groups = state.groups.filter(g => g.id !== gid);
+    ensureContact(gid);
+  }
+  // 연락 담당: 없거나 조에서 빠졌으면 남은 조원 중 무작위로 (supabase _ensure_contact와 같은 규칙)
+  function ensureContact(gid) {
+    const g = gid && groupById(gid); if (!g) return;
+    const ms = state.members.filter(m => m.group_id === gid);
+    if (!g.contact_id || !ms.some(m => m.application_id === g.contact_id))
+      g.contact_id = ms.length ? ms[Math.floor(Math.random() * ms.length)].application_id : null;
   }
   function deadlinePassed(g) { return M.isDeadlinePassed({ slot: g.slot }, settingsCamel()); }
   function saveMatching(newGroups, joins, summary, auto) {
@@ -121,6 +129,7 @@
         if (memberOf(id)) throw new Error('이미 조가 있는 신청자예요.');
         state.members.push({ application_id: id, group_id: g.id, response: 'pending', added_at: nowIso(), seq: ++state.seq });
       });
+      ensureContact(g.id);
     });
     (joins || []).forEach(j => {
       if (memberOf(j.memberId)) throw new Error('이미 조가 있는 신청자예요.');
@@ -173,7 +182,7 @@
       if (g) {
         const ms = state.members.filter(x => x.group_id === g.id).sort((x, y) => x.seq - y.seq);
         const apps = ms.map(x => appById(x.application_id));
-        group = { id: g.id, no: g.no, slot: g.slot, locked: g.locked,
+        group = { id: g.id, no: g.no, slot: g.slot, locked: g.locked, contactId: g.contact_id,
           members: ms.map((x, i) => ({ id: apps[i].id, name: apps[i].id === a.id ? apps[i].name : M.maskName(apps[i].name), email: apps[i].email,
             dept: apps[i].dept, gender: apps[i].gender, birthYear: apps[i].birth_year, mbti: apps[i].mbti, response: x.response })) };
       }
@@ -198,7 +207,7 @@
       if (state.members.filter(x => x.group_id === g.id).length < 2) {
         state.members = state.members.filter(x => x.group_id !== g.id);
         state.groups = state.groups.filter(x => x.id !== g.id);
-      }
+      } else ensureContact(g.id);
       return { ok: true };
     },
     get_waiting_count() {

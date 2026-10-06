@@ -375,6 +375,11 @@
     .kakao-banner b { color: #FFD5BC; }
     .kakao-banner button { justify-self: start; padding: 9px 16px; border-radius: 999px; border: none; background: #FEE500; color: #191919; font-weight: 800; font-size: 14px; cursor: pointer; }
     .kakao-banner .kakao-sub { font-size: 12px; opacity: .85; }
+      /* 연락 담당 */
+    .contact-badge { display: inline-block; margin-left: 4px; padding: 1px 7px; border-radius: 999px; background: #FFF1D6; border: 1px solid #F6CF86; color: #8A5300; font-size: 11px; font-weight: 700; vertical-align: middle; }
+    .contact-box { display: grid; gap: 2px; padding: 12px 14px; border-radius: 16px; background: #FFF6EE; border: 1px solid #F3D9C6; font-size: 13px; color: #7A5646; line-height: 1.5; }
+    .contact-box b { color: #3B2418; font-size: 14px; }
+    .contact-box.mine { background: #FFF1D6; border-color: #F6CF86; }
   </style>
 </head>
 <body class="min-h-screen py-6 md:py-12 px-5 flex flex-col items-center">
@@ -898,7 +903,7 @@
       const err = a.error || g.error || m.error || s.error;
       if (err) { showToast('데이터를 불러오지 못했어요: ' + err.message); return false; }
       responseList = a.data.map(fromDbApp);
-      matchState.groups = g.data.map(x => ({ id: x.id, no: x.no, slot: x.slot, locked: x.locked, createdAt: x.created_at, memberIds: [], responses: {} }));
+      matchState.groups = g.data.map(x => ({ id: x.id, no: x.no, slot: x.slot, locked: x.locked, contactId: x.contact_id, createdAt: x.created_at, memberIds: [], responses: {} }));
       const byGroup = Object.fromEntries(matchState.groups.map(x => [x.id, x]));
       m.data.forEach(x => {
         const grp = byGroup[x.group_id]; if (!grp) return;
@@ -1584,7 +1589,7 @@
           <ul class="apple-caption text-ink space-y-2 mb-3">
             ${members.map(m => `
               <li>
-                <div>${esc(m.name)} <span class="apple-fine-print font-semibold ${responseOf(g, m.id) === 'yes' ? 'text-pwc-orange' : 'text-muted'}">${responseOf(g, m.id) === 'yes' ? '참석✓' : '대기'}</span> <span class="text-muted apple-fine-print">${esc([m.dept, m.mbti, m.gender, m.birthYear ? String(m.birthYear).slice(2) + '년생' : ''].filter(Boolean).join(' · '))}</span>
+                <div>${esc(m.name)}${sid(m.id) === sid(g.contactId) ? ' <span class="contact-badge">📞 연락 담당</span>' : ''} <span class="apple-fine-print font-semibold ${responseOf(g, m.id) === 'yes' ? 'text-pwc-orange' : 'text-muted'}">${responseOf(g, m.id) === 'yes' ? '참석✓' : '대기'}</span> <span class="text-muted apple-fine-print">${esc([m.dept, m.mbti, m.gender, m.birthYear ? String(m.birthYear).slice(2) + '년생' : ''].filter(Boolean).join(' · '))}</span>
                 ${m.slots.includes(g.slot) ? '' : '<span class="apple-fine-print text-red-600 font-semibold"> ⚠️ 고르지 않은 시간</span>'}</div>
                 <select class="${selectCls}" aria-label="${esc(m.name)} 이동" onchange="moveMember('${sid(m.id)}', this.value)">${groupOptions(g.id, m)}</select>
               </li>`).join('')}
@@ -1615,6 +1620,14 @@
       document.getElementById('resultEmail').value = my ? my.email : '';
       document.getElementById('resultCode').value = my ? my.code : '';
       if (my) lookupResult(true);
+    }
+    // 연락 담당 안내: 내가 담당이면 먼저 연락해 달라고, 아니면 누가 연락할지 알려 줌
+    function contactNotice(g, me, members) {
+      const c = members.find(m => sid(m.id) === sid(g.contactId));
+      if (!c) return '';
+      return sid(c.id) === sid(me.id)
+        ? `<div class="contact-box mine"><b>🙋 이번 조 연락 담당으로 뽑혔어요!</b><span>점심 전에 아래 조원 이메일로 먼저 인사와 만날 장소를 알려 주세요.</span></div>`
+        : `<div class="contact-box"><b>📞 연락 담당: ${esc(c.name)}님</b><span>담당 조원이 곧 연락드릴 거예요. 메일함(스팸함 포함)을 확인해 주세요.</span></div>`;
     }
     // 서버 함수 get_my_result가 이메일 + 코드가 맞을 때만 "내 정보 + 내 조"를 돌려줌
     async function lookupResult(silent = false) {
@@ -1672,11 +1685,12 @@
             <span class="shrink-0 px-2.5 py-1 rounded-full apple-fine-print font-semibold ${isConfirmed(g) ? 'bg-pwc-orange text-white' : 'bg-pwc-soft text-pwc-orange border border-pwc-border'}">${isConfirmed(g) ? '확정' : esc(statusLabel(g))}</span>
           </div>
           <div class="flex flex-wrap gap-1">${groupReasons(members).map(t => `<span class="px-2 py-0.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print text-ink">${esc(t)}</span>`).join('')}</div>
+          ${contactNotice(g, me, members)}
           <ul class="divide-y divide-pwc-border/60">
             ${members.map(m => `
               <li class="py-3">
                 <div class="flex items-center justify-between gap-2">
-                  <div class="apple-caption-strong text-ink">${esc(m.name)}${sid(m.id) === sid(me.id) ? ' <span class="text-pwc-orange">(나)</span>' : ''} <span class="apple-fine-print text-muted font-normal">${esc(m.dept || '')}</span></div>
+                  <div class="apple-caption-strong text-ink">${esc(m.name)}${sid(m.id) === sid(me.id) ? ' <span class="text-pwc-orange">(나)</span>' : ''}${sid(m.id) === sid(g.contactId) ? ' <span class="contact-badge">📞 연락 담당</span>' : ''} <span class="apple-fine-print text-muted font-normal">${esc(m.dept || '')}</span></div>
                   ${responseOf(g, m.id) === 'yes' ? '<span class="shrink-0 apple-fine-print font-semibold text-pwc-orange">참석 ✓</span>' : `<span class="shrink-0 apple-fine-print text-muted">${isConfirmed(g) ? '참석' : '응답 대기'}</span>`}
                 </div>
                 <div class="apple-fine-print text-muted break-all">${esc(m.email)}</div>

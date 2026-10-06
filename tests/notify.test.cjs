@@ -44,7 +44,7 @@ function fakeDb() {
   const st = {
     settings: [{ id: 1, cutoff_min: 60, include_past: false }],
     groups: [
-      { id: 'g1', no: 1, slot: '10/7(수) 12:00', locked: false },
+      { id: 'g1', no: 1, slot: '10/7(수) 12:00', locked: false, contact_id: 'b' },
       { id: 'g2', no: 2, slot: '10/8(목) 12:30', locked: true }
     ],
     applications: [
@@ -97,6 +97,9 @@ const notified = st => st.group_members.filter(m => m.notified_at && !m.notified
   ok(kim.text.includes('김삼일님') && kim.text.includes('1조 · 10/7(수) 12:00 시작 · 3명') && kim.text.includes(appUrl), '본문: 이름·조·시간·인원·앱 주소')
   ok(kim.text.includes('이*무(Tax·INFP)') && kim.text.includes('샘*일(Deal·ESTJ)') && !kim.text.includes('이세무'), '조원 이름은 가리고(이*무) 부문·MBTI 표시')
   ok(kim.text.includes('응답 마감: 10/7(수) 11:00'), '응답 마감 = 점심 60분 전 (한국 시간)')
+  ok(kim.text.includes('■ 연락 담당: 이*무님이 먼저 연락드릴 거예요'), '연락 담당 안내 (다른 사람이 담당)')
+  const lee = decode(f.log.mails.find(m => m.to === 'lee@gmail.com').data)
+  ok(lee.text.includes('■ 연락 담당: 나! 점심 전에 조원들에게 먼저 연락해 주세요'), '연락 담당 안내 (내가 담당)')
   ok(!kim.text.includes('확인 코드:'), '확인 코드는 메일에 넣지 않음')
 
   // 2) 다시 실행 → 보낼 사람 없음
