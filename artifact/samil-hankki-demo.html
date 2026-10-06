@@ -1558,6 +1558,7 @@
 
       document.getElementById('inputEmail').addEventListener('input', e => {
         // 전체 주소(abc@gmail.com)를 붙여 넣으면 앞부분만 남기고, 도메인이 목록에 있으면 자동 선택
+        if (e.isComposing) return;   // 키보드가 글자를 조합하는 중에는 값을 건드리지 않음 (안드로이드 한글 입력 꼬임 방지)
         const v = e.target.value;
         if (/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(v)) showToast('이메일 @ 앞부분은 영문·숫자로 입력해 주세요.');
         if (v.includes('@')) {
@@ -2322,6 +2323,8 @@
       name.setAttribute('enterkeyhint', 'next');
       email.setAttribute('enterkeyhint', 'next');
       name.addEventListener('keydown', e => {
+        // 휴대폰은 Enter/다음 키를 가로채지 않음 (삼성 키보드는 한글 조합 중 Enter를 가로채면 글자가 사라지거나 꼬임)
+        if (TOUCH) return;
         if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (name.value.trim()) seqNext(0); }
       });
       name.addEventListener('blur', () => { if (name.value.trim()) seqNext(0, false); });
@@ -2329,6 +2332,7 @@
       document.getElementById('selectGender').addEventListener('change', () => seqNext(2));
       document.querySelectorAll('#step1 .seq-skip').forEach(b => b.addEventListener('click', () => seqNext(Number(b.dataset.skip))));
       email.addEventListener('keydown', e => {
+        if (TOUCH) return;
         if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (emailOk()) seqNext(3); }
       });
       email.addEventListener('blur', () => { if (emailOk()) seqNext(3, false); });
