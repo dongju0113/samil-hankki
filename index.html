@@ -10,7 +10,7 @@
   <!-- Supabase (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- 매칭 규칙 (서버 자동 매칭과 같은 파일을 사용) -->
-  <script src="matching.js?v=20261006b"></script>
+  <script src="matching.js?v=20261006c"></script>
   <!-- 글꼴: 제목·버튼은 주아(Jua), 본문은 Pretendard -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -224,7 +224,8 @@
     #achieveToast { position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); z-index: 61; width: min(92vw, 360px);
       display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 20px; background: rgba(255, 255, 255, .92);
       box-shadow: 0 12px 30px -10px rgba(59, 36, 24, .35); transform: translate(-50%, -140%); transition: transform .55s cubic-bezier(.2, .9, .25, 1.15); text-align: left; }
-    #achieveToast.show { transform: translate(-50%, 0); }
+    #achieveToast { pointer-events: none; }
+    #achieveToast.show { transform: translate(-50%, 0); pointer-events: auto; }
     #achieveToast .badge { flex-shrink: 0; width: 46px; height: 46px; border-radius: 14px; background: linear-gradient(145deg, #E8662C, #C94402); display: flex; align-items: center; justify-content: center; }
     #achieveToast b { display: block; font-family: "Jua", sans-serif; font-weight: 400; font-size: 16px; color: #3B2418; }
     #achieveToast span { display: block; font-size: 12px; color: #7A5646; }
@@ -270,6 +271,8 @@
     .waiting-dot { width: 7px; height: 7px; border-radius: 50%; background: #D04A02; box-shadow: 0 0 0 0 rgba(208,74,2,.5); animation: waitingPulse 1.8s ease-out infinite; }
     @keyframes waitingPulse { 0% { box-shadow: 0 0 0 0 rgba(208,74,2,.45); } 70% { box-shadow: 0 0 0 7px rgba(208,74,2,0); } 100% { box-shadow: 0 0 0 0 rgba(208,74,2,0); } }
     @media (prefers-reduced-motion: reduce) { .waiting-dot { animation: none; } }
+      /* 휴대폰: 입력 칸 글자가 16px보다 작으면 아이폰이 누를 때마다 화면을 확대해서 입력이 꼬임 → 16px로 */
+    @media (max-width: 767px) { input, select, textarea { font-size: 16px !important; } }
   </style>
 </head>
 <body class="min-h-screen py-6 md:py-12 px-5 flex flex-col items-center">
@@ -430,7 +433,7 @@
           </label>
           <p class="apple-fine-print text-muted mb-2">매칭 결과를 확인할 때 쓰는 이메일 주소 (@ 앞부분 입력 후 도메인 선택)</p>
           <div id="emailBox" class="flex items-center w-full bg-white border border-pwc-border rounded-xl focus-within:border-pwc-orange focus-within:bg-white transition overflow-hidden">
-            <input type="text" id="inputEmail" placeholder="gildong.hong" autocomplete="off" autocapitalize="off" spellcheck="false" class="flex-1 min-w-0 px-4 py-3 bg-transparent text-ink text-sm focus:outline-none">
+            <input type="text" id="inputEmail" inputmode="email" lang="en" placeholder="gildong.hong" autocomplete="off" autocapitalize="off" spellcheck="false" class="flex-1 min-w-0 px-4 py-3 bg-transparent text-ink text-sm focus:outline-none">
             <span class="pl-1 py-3 text-muted text-sm font-medium select-none">@</span>
             <select id="selectEmailDomain" aria-label="이메일 도메인" class="pr-3 pl-1 py-3 bg-transparent text-ink text-sm font-medium focus:outline-none cursor-pointer"></select>
           </div>
@@ -1029,6 +1032,7 @@
       document.getElementById('inputEmail').addEventListener('input', e => {
         // 전체 주소(abc@gmail.com)를 붙여 넣으면 앞부분만 남기고, 도메인이 목록에 있으면 자동 선택
         const v = e.target.value;
+        if (/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(v)) showToast('이메일 @ 앞부분은 영문·숫자로 입력해 주세요.');
         if (v.includes('@')) {
           const [id, domain] = v.split('@');
           e.target.value = id;
@@ -1756,6 +1760,9 @@
     // ===== 1단계: 입력을 마치면 다음 칸이 자동으로 나타나고 커서가 옮겨감 =====
         const SEQ_COUNT = 10;   // 0 이름 → 1 출생연도 → 2 성별 → 3 이메일 → 4 부문 → 5 MBTI → 6 원하는 성별 → 7 원하는 부문 → 8 희망 인원 → 9 동의
     let seqShown = 0;
+    // 터치 화면(휴대폰·태블릿): 질문을 처음부터 모두 보여 주고 커서 강제 이동·자동 스크롤은 하지 않음
+    // (키보드가 올라온 상태에서 화면이 튀어 입력이 꼬이는 문제 방지). PC는 하나씩 나타나는 효과 유지
+    const TOUCH = window.matchMedia('(pointer: coarse)').matches;
     function seqEl(i) { return document.querySelector(`#step1 .seq-field[data-seq="${i}"]`); }
     function seqReveal(upTo, focus = true) {
       upTo = Math.min(upTo, SEQ_COUNT - 1);
@@ -1766,7 +1773,7 @@
       seqShown = Math.max(seqShown, upTo);
       document.querySelectorAll('#step1 .seq-skip').forEach(s => { s.hidden = Number(s.dataset.skip) < seqShown; }); // 지나간 칸의 '넘어가기'는 숨김
       const el = seqEl(upTo);
-      if (!focus || !el) return;
+      if (!focus || !el || TOUCH) return;
       setTimeout(() => {
         const f = el.querySelector('input, select, button');
         if (f && upTo < SEQ_COUNT - 1) f.focus({ preventScroll: true });
@@ -1777,7 +1784,7 @@
     function seqRevealAll() { seqReveal(SEQ_COUNT - 1, false); }
     function seqReset() {
       // 이미 입력한 적이 있으면(수정하러 돌아온 경우 등) 전부 보여 줌
-      if (formData.name) { seqRevealAll(); return; }
+      if (formData.name || TOUCH) { seqRevealAll(); return; }
       for (let i = 1; i < SEQ_COUNT; i++) seqEl(i).classList.add('seq-hidden');
       seqShown = 0;
     }
@@ -1788,14 +1795,14 @@
       name.setAttribute('enterkeyhint', 'next');
       email.setAttribute('enterkeyhint', 'next');
       name.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (name.value.trim()) seqNext(0); }
+        if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (name.value.trim()) seqNext(0); }
       });
       name.addEventListener('blur', () => { if (name.value.trim()) seqNext(0, false); });
       document.getElementById('selectBirthYear').addEventListener('change', () => seqNext(1));
       document.getElementById('selectGender').addEventListener('change', () => seqNext(2));
       document.querySelectorAll('#step1 .seq-skip').forEach(b => b.addEventListener('click', () => seqNext(Number(b.dataset.skip))));
       email.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (emailOk()) seqNext(3); }
+        if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (emailOk()) seqNext(3); }
       });
       email.addEventListener('blur', () => { if (emailOk()) seqNext(3, false); });
       document.getElementById('selectEmailDomain').addEventListener('change', () => { if (emailOk()) seqNext(3); });
