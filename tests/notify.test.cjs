@@ -48,7 +48,7 @@ function fakeDb() {
       { id: 'g2', no: 2, slot: '10/8(목) 12:30', locked: true }
     ],
     applications: [
-      { id: 'a', name: '김삼일', email: 'kim@naver.com', dept: 'Audit', dept_open: true, sample: false },
+      { id: 'a', name: '김삼일', email: 'kim@naver.com', dept: 'Assurance', dept_open: true, sample: false },
       { id: 'b', name: '이세무', email: 'lee@gmail.com', dept: 'Tax', mbti: 'INFP', sample: false },
       { id: 'c', name: '샘플일', email: 'sample1@example.com', dept: 'Deal', mbti: 'ESTJ', sample: true },
       { id: 'd', name: '박재무', email: 'park@naver.com', dept: 'AX', dept_open: true, sample: false },

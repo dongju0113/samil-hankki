@@ -25,11 +25,11 @@
     };
     const days = M.dayWindow().slice(1).filter(d => !/(토|일)/.test(d)); // 내일부터 평일
     const T = M.timeSlots15Min;
-    const depts = ['Audit', 'Tax', 'Deal', 'AX'];
+    const depts = ['Assurance', 'Tax', 'Deal', 'AX'];
     const names = ['이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저', '오회계', '서밸류', '문리스크'];
     const MB = M.MBTI_TYPES;
     const wantG = [['상관없음'], ['남성'], ['여성'], ['남성', '여성']];
-    const wantD = [['상관없음'], ['Audit', 'Tax'], ['Deal', 'AX'], ['상관없음'], ['Tax', 'Deal', 'AX']];
+    const wantD = [['상관없음'], ['Assurance', 'Tax'], ['Deal', 'AX'], ['상관없음'], ['Tax', 'Deal', 'AX']];
     const sizeSets = [['3~4명'], ['3~4명', '5명~'], ['2명', '3~4명'], ['3~4명']];
     const pick = (arr, k, s) => { const out = []; while (out.length < k) { const v = arr[(s * 7919 + 13) % arr.length]; if (!out.includes(v)) out.push(v); s++; } return out; };
     const add = (o) => {
@@ -43,7 +43,7 @@
 
     // 체험용 신청자 + 이미 짜인 1조 (내 결과 화면을 바로 볼 수 있게)
     const firstSlot = `${days[0]} 12:00`;
-    const me = add({ email: DEMO_EMAIL, code: DEMO_CODE, name: '김삼일', birth_year: '1999', gender: '여성', dept: 'Audit', mbti: 'ENFJ',
+    const me = add({ email: DEMO_EMAIL, code: DEMO_CODE, name: '김삼일', birth_year: '1999', gender: '여성', dept: 'Assurance', mbti: 'ENFJ',
       want_genders: ['상관없음'], want_depts: ['Tax', 'Deal', 'AX'], slots: [firstSlot, `${days[0]} 12:15`], sample: false });
     const mates = [
       add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', gender: '남성', dept: 'Tax', mbti: 'INFP', slots: [firstSlot] }),
@@ -154,9 +154,9 @@
       const slots = arr(f.slots), sizes = arr(f.group_sizes), wg = arr(f.want_genders), wd = arr(f.want_depts);
       const within = (xs, ok) => xs.length > 0 && xs.every(x => ok.includes(x));
       if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$/.test(email) || !String(f.name || '').trim() || !/^(19|20)\d{2}$/.test(f.birth_year || '')
-          || !['남성', '여성'].includes(f.gender) || !['Audit', 'Tax', 'Deal', 'AX'].includes(f.dept) || !M.MBTI_TYPES.includes(f.mbti)
+          || !['남성', '여성'].includes(f.gender) || !['Assurance', 'Tax', 'Deal', 'AX'].includes(f.dept) || !M.MBTI_TYPES.includes(f.mbti)
           || !slots.length || !within(sizes, ['2명', '3~4명', '5명~']) || !within(wg, ['남성', '여성', '상관없음'])
-          || !within(wd, ['Audit', 'Tax', 'Deal', 'AX', '상관없음']))
+          || !within(wd, ['Assurance', 'Tax', 'Deal', 'AX', '상관없음']))
         return { ok: false, reason: 'invalid' };
       const fields = {
         name: String(f.name).trim(), birth_year: f.birth_year, gender: f.gender, dept: f.dept, dept_open: true, mbti: f.mbti,

@@ -30,7 +30,7 @@
 | `api/send-code.js` | 신청 완료 시 확인 코드 메일 발송 (samilhankki@gmail.com, Gmail SMTP) |
 | `api/notify-matched.js`, `api/_notify.js` | 매칭 메일: 새로 조가 정해진 사람에게 발송. 자동 매칭 직후·23시 추가 발송(cron `0 14 * * *`)·운영자 매칭/조원 이동 직후. `group_members.notified_at`으로 중복 방지 |
 | `api/_mail.js`, `api/_db.js` | 서버 함수 공용 (Gmail SMTP, secret key로 Supabase 접근). `_`로 시작해 주소로는 안 열림 |
-| `supabase/01~06_*.sql` | 표·RLS·함수. 사용자가 Supabase SQL Editor에서 직접 실행 |
+| `supabase/01~07_*.sql` | 표·RLS·함수. 사용자가 Supabase SQL Editor에서 직접 실행 |
 | `docs/` | 프로젝트 현황, Supabase·Vercel·Gmail 설정 가이드 |
 | `tests/` | 전체 검사 (`node tests/run-all.cjs`) |
 | `artifact/` | 심사용 백업 데모. `python artifact/build.py`로 `samil-hankki-demo.html` 생성 → 같은 파일을 Artifact로 재게시 (https://claude.ai/artifact/PW8QAT9sBa15ZRtxDW2mmR) |

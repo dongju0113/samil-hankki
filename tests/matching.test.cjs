@@ -6,7 +6,7 @@ const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? '  ✓ ' : '  ✗ '
 
 const now = new Date('2026-10-05T03:00:00Z') // 한국 시간 10/5(월) 12:00
 const settings = { autoOn: true, time: '22:00', cutoffMin: 60, includePast: false }
-const person = (id, slots, extra = {}) => ({ id, name: id, dept: 'Audit', gender: '남성', birthYear: '1998', mbti: 'ENFP', slots,
+const person = (id, slots, extra = {}) => ({ id, name: id, dept: 'Assurance', gender: '남성', birthYear: '1998', mbti: 'ENFP', slots,
   groupSizes: ['3~4명'], wantGenders: ['상관없음'], wantDepts: ['상관없음'], avoid: [], ...extra })
 
 // 일정표: 오늘 포함 7일, 한국 시간 기준
@@ -19,10 +19,10 @@ ok(M.slotDate('10/7(수) 12:00').toISOString() === '2026-10-07T03:00:00.000Z', '
 ok(M.maskName('최동주') === '최*주' && M.maskName('김철') === '김*' && M.maskName('남궁민수') === '남**수' && M.maskName('A') === 'A', '이름 가리기: 최*주 · 김* · 남**수')
 
 // 점수: MBTI 50 + 성별 25 + 부문 25
-const a = person('a', [], { gender: '남성', dept: 'Audit', wantGenders: ['여성'], wantDepts: ['Tax'] })
-const b = person('b', [], { gender: '여성', dept: 'Tax', wantGenders: ['남성'], wantDepts: ['Audit'] })
+const a = person('a', [], { gender: '남성', dept: 'Assurance', wantGenders: ['여성'], wantDepts: ['Tax'] })
+const b = person('b', [], { gender: '여성', dept: 'Tax', wantGenders: ['남성'], wantDepts: ['Assurance'] })
 ok(M.pairScore(a, b) === 43 + 50, `ENFP끼리 궁합 86점의 절반 43 + 서로 원하는 성별·부문 50 → 93점 (${M.pairScore(a, b)})`)
-const c = person('c', [], { gender: '남성', dept: 'Audit', wantGenders: ['남성'], wantDepts: ['Audit'] })
+const c = person('c', [], { gender: '남성', dept: 'Assurance', wantGenders: ['남성'], wantDepts: ['Assurance'] })
 ok(M.pairScore(a, c) === 43 + 12.5 + 12.5, `a는 c가 안 맞고 c는 a가 맞음 → 성별 12.5 + 부문 12.5 + MBTI 43 (${M.pairScore(a, c)})`)
 ok(M.pairScore(person('x', []), person('y', [])) === 93, '"상관없음"끼리는 성별·부문 만점')
 ok(M.mbtiScore('INFP', 'ENTJ') === 100 && M.mbtiScore('ESFP', 'ISTJ') === 100 && M.mbtiScore('ESFP', 'ENFP') === 71, '팀 궁합표 반영 (INFP-ENTJ 100, ESFP-ENFP 71)')
@@ -65,9 +65,9 @@ ok(mine && mine.memberIds.includes('f1'), '원하는 성별(여성) 반영 → �
 
 // 원하는 부문: Tax를 원하면 Tax와 묶임
 r = M.computeMatching({ responses: [
-  person('me', ['10/9(금) 12:00'], { ...two, dept: 'Audit', wantDepts: ['Tax'] }),
+  person('me', ['10/9(금) 12:00'], { ...two, dept: 'Assurance', wantDepts: ['Tax'] }),
   person('d1', ['10/9(금) 12:00'], { ...two, dept: 'Deal', wantDepts: ['Deal'] }),
-  person('t1', ['10/9(금) 12:00'], { ...two, dept: 'Tax', wantDepts: ['Audit'] }),
+  person('t1', ['10/9(금) 12:00'], { ...two, dept: 'Tax', wantDepts: ['Assurance'] }),
   person('d2', ['10/9(금) 12:00'], { ...two, dept: 'Deal', wantDepts: ['Deal'] })
 ], groups: [], settings, now })
 mine = r.newGroups.find(g => g.memberIds.includes('me'))

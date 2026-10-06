@@ -541,7 +541,7 @@
             소속 부문·본부 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
           </label>
           <div class="grid grid-cols-4 p-1 bg-pwc-soft rounded-xl border border-pwc-border gap-1" id="deptSegmentGroup">
-            <button type="button" class="dept-seg-btn" data-val="Audit">Audit</button>
+            <button type="button" class="dept-seg-btn" data-val="Assurance">Assurance</button>
             <button type="button" class="dept-seg-btn" data-val="Tax">Tax</button>
             <button type="button" class="dept-seg-btn" data-val="Deal">Deal</button>
             <button type="button" class="dept-seg-btn" data-val="AX">AX</button>
@@ -586,7 +586,7 @@
           <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">원하는 조원 부문 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span></label>
           <p class="apple-fine-print text-muted mb-2">여러 개 고를 수 있어요</p>
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="Audit">Audit</button>
+            <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="Assurance">Assurance</button>
             <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="Tax">Tax</button>
             <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="Deal">Deal</button>
             <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="AX">AX</button>
@@ -1789,11 +1789,11 @@
 
     // ===== 샘플 30명 =====
     async function addSampleData() {
-      const depts = ['Audit', 'Tax', 'Deal', 'AX'];
+      const depts = ['Assurance', 'Tax', 'Deal', 'AX'];
       const names = ['김회계', '이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저'];
       const sizeSets = [['3~4명'], ['3~4명', '5명~'], ['2명', '3~4명'], ['5명~'], ['2명']];
       const wantG = [['상관없음'], ['남성'], ['여성'], ['남성', '여성'], ['상관없음']];
-      const wantD = [['상관없음'], ['Audit', 'Tax'], ['Deal', 'AX'], ['상관없음'], ['Tax', 'Deal', 'AX']];
+      const wantD = [['상관없음'], ['Assurance', 'Tax'], ['Deal', 'AX'], ['상관없음'], ['Tax', 'Deal', 'AX']];
       const weekdays = fullWeekDays.filter(d => !/(토|일)/.test(d));
       const pick = (arr, k, seed) => { const out = []; let s = seed; while (out.length < k) { const v = arr[(s * 7919 + 13) % arr.length]; if (!out.includes(v)) out.push(v); s++; } return out; };
       const stamp = Date.now();

@@ -22,7 +22,7 @@ function call(headers = {}, query = {}) {
     handler({ headers, query }, res)
   })
 }
-const app = (i, slots) => ({ id: 'a' + i, name: 'p' + i, dept: 'Audit', birth_year: '1995', slots, budget: '무관', food_categories: ['한식'],
+const app = (i, slots) => ({ id: 'a' + i, name: 'p' + i, dept: 'Assurance', birth_year: '1995', slots, budget: '무관', food_categories: ['한식'],
   spicy: '보통', group_sizes: ['3~4명'], vibe: '둘 다 좋아요', interests: ['독서'], priority: [], avoid: [] })
 
 ;(async () => {

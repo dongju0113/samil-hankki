@@ -243,19 +243,23 @@ declare
   v_bytes     bytea;
   v_old_group uuid;
 begin
+  -- 부문 이름 변경(Audit → Assurance): 예전 화면에서 보낸 값도 새 이름으로 저장
+  v_dept := case when v_dept = 'Audit' then 'Assurance' else v_dept end;
+  v_want_d := array_replace(v_want_d, 'Audit', 'Assurance');
+
   -- 기본 검증 (화면 검증과 같은 기준 + 비정상 요청 차단)
   if length(p_form::text) > 6000
      or v_email !~ '^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$'
      or length(v_name) not between 1 and 30
      or v_birth !~ '^(19|20)\d{2}$'
      or v_gender not in ('남성', '여성')
-     or v_dept not in ('Audit', 'Tax', 'Deal', 'AX')
+     or v_dept not in ('Assurance', 'Tax', 'Deal', 'AX')
      or v_mbti !~ '^[EI][SN][TF][JP]$'
      or coalesce(array_length(v_slots, 1), 0) = 0
      or exists (select 1 from unnest(v_slots) s where s !~ '^\d+/\d+\(.\) \d{2}:\d{2}$')
      or coalesce(array_length(v_sizes, 1), 0) = 0 or not (v_sizes <@ array['2명', '3~4명', '5명~'])
      or coalesce(array_length(v_want_g, 1), 0) = 0 or not (v_want_g <@ array['남성', '여성', '상관없음'])
-     or coalesce(array_length(v_want_d, 1), 0) = 0 or not (v_want_d <@ array['Audit', 'Tax', 'Deal', 'AX', '상관없음'])
+     or coalesce(array_length(v_want_d, 1), 0) = 0 or not (v_want_d <@ array['Assurance', 'Tax', 'Deal', 'AX', '상관없음'])
   then
     return jsonb_build_object('ok', false, 'reason', 'invalid');
   end if;

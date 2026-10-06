@@ -1,29 +1,14 @@
 -- =====================================================================
--- 삼일한끼 Supabase 설정 (5) — 2026-10-06 개편
---  · 신청 항목: MBTI, 원하는 조원 성별·부문 추가 / 출생연도·성별 필수 / 관심사·음식 등 삭제
---  · 매칭 결과: 조원 이름 가리기(최*주), 조원 정보(출생연도·성별·부문·MBTI·이메일) 표시
---  · 실시간 매칭 대기 인원 함수
--- 01~04를 이미 실행한 프로젝트에서 실행하세요. (01을 처음 실행하는 새 프로젝트라면 필요 없어요)
+-- 삼일한끼 Supabase 설정 (7) — 소속 부문 이름 변경: Audit → Assurance
+-- 01~06을 이미 실행한 프로젝트에서 실행하세요. (01을 처음 실행하는 새 프로젝트라면 필요 없어요)
 -- SQL Editor > New query 에 전체를 붙여 넣고 [Run]. 여러 번 실행해도 안전합니다.
 -- =====================================================================
 
--- 2026-10-06 개편: MBTI·원하는 조원 성별/부문 (관심사·음식 등 예전 칸은 남겨 두되 쓰지 않음)
-alter table public.applications add column if not exists mbti text not null default '';
-alter table public.applications add column if not exists want_genders text[] not null default '{}';
-alter table public.applications add column if not exists want_depts text[] not null default '{}';
+-- 이미 저장된 신청: 소속 부문과 원하는 조원 부문을 새 이름으로
+update public.applications set dept = 'Assurance' where dept = 'Audit';
+update public.applications set want_depts = array_replace(want_depts, 'Audit', 'Assurance') where 'Audit' = any(want_depts);
 
--- 이름 가리기: 최동주 → 최*주, 김철 → 김*, 남궁민수 → 남**수 (matching.js의 maskName과 같은 규칙)
-create or replace function public._mask_name(p text)
-returns text
-language sql immutable set search_path = ''
-as $$
-  select case
-    when char_length(coalesce(p, '')) <= 1 then coalesce(p, '')
-    when char_length(p) = 2 then left(p, 1) || '*'
-    else left(p, 1) || repeat('*', char_length(p) - 2) || right(p, 1)
-  end;
-$$;
-
+-- 신청 저장 함수: Assurance만 받고, 예전 화면이 보낸 Audit은 Assurance로 바꿔 저장
 -- 신청 저장. 새 이메일이면 6자리 코드를 발급하고,
 -- 이미 신청한 이메일이면 기존 코드가 맞을 때만 내용을 바꾸고 기존 조에서 빠짐(다시 매칭 대기)
 create or replace function public.submit_application(p_form jsonb, p_code text default null)
@@ -113,71 +98,5 @@ begin
 end;
 $$;
 
--- 내 결과: 이메일 + 코드가 맞을 때만 "내 정보 + 내 조"만 돌려줌 (전체 목록은 절대 안 내려감)
--- 조원 이름은 가려서(최*주) 보냄. 내 이름만 그대로
-create or replace function public.get_my_result(p_email text, p_code text)
-returns jsonb
-language plpgsql security definer set search_path = ''
-as $$
-declare
-  v          jsonb;
-  a          public.applications;
-  g          public.groups;
-  v_members  jsonb;
-begin
-  v := public._verify_applicant(p_email, p_code);
-  if v->>'status' <> 'ok' then
-    return jsonb_build_object('ok', false, 'locked', v->>'status' = 'locked');
-  end if;
-
-  select * into a from public.applications where id = (v->>'id')::uuid;
-  select gr.* into g from public.groups gr
-    join public.group_members gm on gm.group_id = gr.id
-   where gm.application_id = a.id;
-
-  if g.id is not null then
-    select jsonb_agg(jsonb_build_object(
-             'id', m.id,
-             'name', case when m.id = a.id then m.name else public._mask_name(m.name) end,
-             'email', m.email,
-             'dept', m.dept,
-             'gender', m.gender,
-             'birthYear', m.birth_year,
-             'mbti', m.mbti,
-             'response', gm.response
-           ) order by gm.seq)
-      into v_members
-      from public.group_members gm
-      join public.applications m on m.id = gm.application_id
-     where gm.group_id = g.id;
-  end if;
-
-  return jsonb_build_object(
-    'ok', true,
-    'me', jsonb_build_object('id', a.id, 'name', a.name, 'email', a.email,
-                             'slots', to_jsonb(a.slots), 'createdAt', a.created_at),
-    'group', case when g.id is null then null else jsonb_build_object(
-               'id', g.id, 'no', g.no, 'slot', g.slot, 'locked', g.locked, 'members', v_members) end
-  );
-end;
-$$;
-
--- 실시간 매칭 대기 인원: 아직 조가 없고, 마감 전인 시간을 하나 이상 고른 신청자 수 (숫자만 공개)
-create or replace function public.get_waiting_count()
-returns int
-language sql stable security definer set search_path = ''
-as $$
-  select count(*)::int
-    from public.applications a
-   where not exists (select 1 from public.group_members gm where gm.application_id = a.id)
-     and exists (
-       select 1 from unnest(a.slots) as s(slot), public.settings st
-        where st.id = 1
-          and (st.include_past or public._slot_ts(s.slot) - make_interval(mins => st.cutoff_min) > now()));
-$$;
-
-revoke execute on function public._mask_name(text), public.get_waiting_count() from public, anon, authenticated;
-grant execute on function public.get_waiting_count() to anon, authenticated;
-
--- 결과 확인: 지금 매칭 대기 인원 (숫자가 나오면 성공)
-select public.get_waiting_count() as 매칭_대기_인원;
+-- 결과 확인: Audit으로 남은 신청 수 (0이면 성공)
+select count(*) as audit_남은_신청 from public.applications where dept = 'Audit' or 'Audit' = any(want_depts);

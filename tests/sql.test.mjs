@@ -29,7 +29,7 @@ console.log('schema x2 OK'); await db.exec(addAdmin)
 const [{ id: adminId }] = await q(`select id from auth.users where email='admin@test.com'`)
 const [{ id: userId }] = await q(`select id from auth.users where email='notadmin@test.com'`)
 
-const form = (email, extra = {}) => JSON.stringify({ email, name: '홍길동', birth_year: '1998', gender: '남성', dept: 'Audit', mbti: 'ENFP',
+const form = (email, extra = {}) => JSON.stringify({ email, name: '홍길동', birth_year: '1998', gender: '남성', dept: 'Assurance', mbti: 'ENFP',
   want_genders: ['상관없음'], want_depts: ['Tax', 'Deal'], slots: ['10/7(수) 12:00', '10/8(목) 12:00'], group_sizes: ['3~4명'], ...extra })
 const submit = (f, code = null) => r(`select public.submit_application($1::jsonb, $2) r`, [f, code])
 
@@ -197,5 +197,20 @@ const c2 = await contactOf(cgid)
 ok(!!c2 && c2 !== c1, '담당이 패스하면 남은 조원 중 다시 지목')
 await as('anon')
 ok(!!(await tryq(`select public._ensure_contact($1)`, [cgid])).err, 'anon 내부 함수(_ensure_contact) 실행 차단')
+
+console.log('\n[부문 이름 Audit → Assurance]')
+await db.exec(`reset role; delete from public.groups where true; delete from public.applications where true;`)
+await db.exec(`reset role; insert into public.applications (email, code, name, dept, want_depts) values ('old@gmail.com', '123456', '예전', 'Audit', '{Audit,Tax}');`)
+await db.exec(fs.readFileSync(new URL('07_assurance.sql', PROJ), 'utf8')); await db.exec(fs.readFileSync(new URL('07_assurance.sql', PROJ), 'utf8'))
+const old = (await q(`select dept, want_depts from public.applications where email = 'old@gmail.com'`))[0]
+ok(old.dept === 'Assurance' && old.want_depts.join() === 'Assurance,Tax', '07 실행(두 번 OK): 기존 신청 Audit → Assurance')
+await as('anon')
+ok((await submit(form('new1@gmail.com', { dept: 'Assurance', want_depts: ['Assurance'] }))).ok, 'Assurance로 신청 가능')
+ok((await submit(form('new2@gmail.com', { dept: 'Audit', want_depts: ['Audit', 'Deal'] }))).ok, '예전 화면이 보낸 Audit도 신청은 성공')
+await db.exec(`reset role;`)
+const n2 = (await q(`select dept, want_depts from public.applications where email = 'new2@gmail.com'`))[0]
+ok(n2.dept === 'Assurance' && n2.want_depts.join() === 'Assurance,Deal', '…Audit은 Assurance로 바꿔 저장')
+await as('anon')
+ok((await submit(form('new3@gmail.com', { dept: '영업' }))).reason === 'invalid', '없는 부문은 거부')
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
