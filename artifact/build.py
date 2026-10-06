@@ -32,6 +32,11 @@ head = re.sub(r'<script src="matching\.js(\?[^"]*)?"></script>', lambda m: '<scr
 head = head.replace('<script src="matching.js"></script>',
                     '<script>\n' + matching + '\n</script>\n  <!-- 백업 데모: Supabase 대신 브라우저 안 가짜 저장소 -->\n  <script>\n' + backend + '\n</script>')
 assert 'supabase-js' not in head and 'src="matching.js"' not in head
+# Artifact는 Google Fonts 외의 글꼴 CSS를 막음 → Pretendard 대신 비슷한 Noto Sans KR(Google Fonts) 사용
+head = re.sub(r'<link rel="stylesheet" href="https://cdn\.jsdelivr\.net/gh/orioncactus/pretendard[^"]*">',
+              '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap">', head)
+head = head.replace('"Pretendard Variable", Pretendard,', '"Pretendard Variable", Pretendard, "Noto Sans KR",')
+assert 'orioncactus' not in head
 
 banner = f'''
   <!-- 백업 데모 안내 -->
