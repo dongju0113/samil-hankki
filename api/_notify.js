@@ -13,8 +13,9 @@ const CHUNK = 100;              // in.(...) 한 번에 넣는 id 수
 function chunks(arr, n) { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; }
 
 function composeText({ me, group, mates, deadline, appUrl }) {
+  // 조원 이름은 가려서 (최*주), 부문·MBTI 함께
   const mateLine = mates.length
-    ? mates.map(m => m.dept_open && m.dept ? `${m.name}(${m.dept})` : m.name).join(', ')
+    ? mates.map(m => `${M.maskName(m.name)}(${[m.dept, m.mbti].filter(Boolean).join('·')})`).join(', ')
     : '-';
   return [
     `${me.name}님, 점심 조가 정해졌어요!`,
@@ -47,7 +48,7 @@ async function notifyPending({ appUrl, budgetMs = 45000, db = realDb, connect, n
     db('settings?id=eq.1&select=cutoff_min,include_past')
   ]);
   const appIds = [...new Set(allMembers.map(m => m.application_id))];
-  const apps = (await Promise.all(chunks(appIds, CHUNK).map(ids => db(`applications?select=id,name,email,dept,dept_open,sample&id=${inList(ids)}`)))).flat();
+  const apps = (await Promise.all(chunks(appIds, CHUNK).map(ids => db(`applications?select=id,name,email,dept,mbti,sample&id=${inList(ids)}`)))).flat();
   const appById = Object.fromEntries(apps.map(a => [a.id, a]));
   const groupById = Object.fromEntries(groups.map(g => [g.id, g]));
   const settings = { cutoffMin: settingsRows[0] ? settingsRows[0].cutoff_min : 60, includePast: false };

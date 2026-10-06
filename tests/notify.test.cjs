@@ -49,8 +49,8 @@ function fakeDb() {
     ],
     applications: [
       { id: 'a', name: '김삼일', email: 'kim@naver.com', dept: 'Audit', dept_open: true, sample: false },
-      { id: 'b', name: '이세무', email: 'lee@gmail.com', dept: 'Tax', dept_open: false, sample: false },
-      { id: 'c', name: '샘플1', email: 'sample1@example.com', dept: 'Deal', dept_open: true, sample: true },
+      { id: 'b', name: '이세무', email: 'lee@gmail.com', dept: 'Tax', mbti: 'INFP', sample: false },
+      { id: 'c', name: '샘플일', email: 'sample1@example.com', dept: 'Deal', mbti: 'ESTJ', sample: true },
       { id: 'd', name: '박재무', email: 'park@naver.com', dept: 'AX', dept_open: true, sample: false },
       { id: 'e', name: '최디지털', email: 'choi@gmail.com', dept: 'AX', dept_open: true, sample: false }
     ],
@@ -95,7 +95,7 @@ const notified = st => st.group_members.filter(m => m.notified_at && !m.notified
   const kim = decode(f.log.mails.find(m => m.to === 'kim@naver.com').data)
   ok(kim.subject === '[삼일한끼] 점심 조가 정해졌어요 · 10/7(수) 12:00', '제목: ' + kim.subject)
   ok(kim.text.includes('김삼일님') && kim.text.includes('1조 · 10/7(수) 12:00 시작 · 3명') && kim.text.includes(appUrl), '본문: 이름·조·시간·인원·앱 주소')
-  ok(kim.text.includes('이세무') && !kim.text.includes('이세무(Tax)') && kim.text.includes('샘플1(Deal)'), '조원 부문은 공개한 사람만 표시')
+  ok(kim.text.includes('이*무(Tax·INFP)') && kim.text.includes('샘*일(Deal·ESTJ)') && !kim.text.includes('이세무'), '조원 이름은 가리고(이*무) 부문·MBTI 표시')
   ok(kim.text.includes('응답 마감: 10/7(수) 11:00'), '응답 마감 = 점심 60분 전 (한국 시간)')
   ok(!kim.text.includes('확인 코드:'), '확인 코드는 메일에 넣지 않음')
 

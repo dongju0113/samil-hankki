@@ -14,6 +14,7 @@
 
 ## 지켜야 할 것
 - 앱은 빌드 도구 없는 HTML 한 파일(`index.html`) + CDN `<script>` 구조. React·Vite·npm 빌드로 바꾸지 않는다. (`tests/package.json`은 검사용일 뿐)
+- `matching.js`를 바꾸면 `index.html`의 `<script src="matching.js?v=날짜">` 버전도 올린다 (브라우저가 예전 파일을 쓰지 않게).
 - 매칭 규칙은 `matching.js` 하나에만 있다. 화면(`index.html`)과 서버(`api/cron-match.js`)가 같이 쓴다. 규칙을 바꾸려면 사용자 확인을 먼저 받는다.
 - 브라우저 코드에는 Supabase **publishable key만**. secret key·Gmail 앱 비밀번호는 Vercel 환경변수에만 있고, 코드·GitHub·채팅에 절대 넣지 않는다.
 - 신청자는 표를 직접 읽거나 쓸 수 없다(RLS). 신청자 기능은 `submit_application` / `get_my_result` / `respond_attend` / `respond_pass` 함수로만.

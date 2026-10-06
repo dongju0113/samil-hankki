@@ -4,7 +4,7 @@
 // - 규칙은 supabase/01_schema.sql의 함수들과 같게 맞춤 (신청·내 결과·참석·패스·운영자 저장)
 (function (root) {
   const M = root.SamilMatching;
-  const KEY = 'samil-hankki-demo-v2';
+  const KEY = 'samil-hankki-demo-v3';
   const DEMO_EMAIL = 'demo@example.com';
   const DEMO_CODE = '123456';
   const clone = x => JSON.parse(JSON.stringify(x));
@@ -27,16 +27,15 @@
     const T = M.timeSlots15Min;
     const depts = ['Audit', 'Tax', 'Deal', 'AX'];
     const names = ['이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저', '오회계', '서밸류', '문리스크'];
-    const interests = ['헬스·러닝', '골프', '독서', '영화·OTT', '국내여행', '해외여행', '맛집 탐방', '카페·디저트', '외국어', '재테크·부동산', '전시·공연', '게임'];
-    const foods = ['한식', '일식', '중식', '아시안', '양식', '분식', '샐러드', '고기'];
+    const MB = M.MBTI_TYPES;
+    const wantG = [['상관없음'], ['남성'], ['여성'], ['남성', '여성']];
+    const wantD = [['상관없음'], ['Audit', 'Tax'], ['Deal', 'AX'], ['상관없음'], ['Tax', 'Deal', 'AX']];
     const sizeSets = [['3~4명'], ['3~4명', '5명~'], ['2명', '3~4명'], ['3~4명']];
-    const pri = [['관심사'], ['다른 부문'], ['관심사', '다른 부문'], ['나이대'], ['음식 취향'], []];
     const pick = (arr, k, s) => { const out = []; while (out.length < k) { const v = arr[(s * 7919 + 13) % arr.length]; if (!out.includes(v)) out.push(v); s++; } return out; };
     const add = (o) => {
       const row = Object.assign({
-        id: uid(), birth_year: '', gender: '응답 안 함', dept_open: true, allergy: '', budget: '무관', food_categories: [],
-        spicy: '보통', group_sizes: ['3~4명'], vibe: '둘 다 좋아요', favorite_thing: '', priority: [], avoid: [],
-        sample: true, created_at: nowIso()
+        id: uid(), birth_year: '1998', gender: '남성', dept_open: true, mbti: 'ENFP', want_genders: ['상관없음'], want_depts: ['상관없음'],
+        group_sizes: ['3~4명'], avoid: [], sample: true, created_at: nowIso()
       }, o);
       st.applications.push(row);
       return row;
@@ -44,13 +43,12 @@
 
     // 체험용 신청자 + 이미 짜인 1조 (내 결과 화면을 바로 볼 수 있게)
     const firstSlot = `${days[0]} 12:00`;
-    const me = add({ email: DEMO_EMAIL, code: DEMO_CODE, name: '김삼일', birth_year: '1999', dept: 'Audit',
-      slots: [firstSlot, `${days[0]} 12:15`], food_categories: ['한식', '일식'], interests: ['맛집 탐방', '헬스·러닝', '해외여행'],
-      favorite_thing: '주말 러닝 크루', priority: ['관심사', '다른 부문'], sample: false });
+    const me = add({ email: DEMO_EMAIL, code: DEMO_CODE, name: '김삼일', birth_year: '1999', gender: '여성', dept: 'Audit', mbti: 'ENFJ',
+      want_genders: ['상관없음'], want_depts: ['Tax', 'Deal', 'AX'], slots: [firstSlot, `${days[0]} 12:15`], sample: false });
     const mates = [
-      add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', dept: 'Tax', slots: [firstSlot], food_categories: ['한식'], interests: ['맛집 탐방', '골프', '독서'], favorite_thing: '을지로 노포 탐방' }),
-      add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', dept: 'Deal', dept_open: false, slots: [firstSlot, `${days[1]} 12:00`], food_categories: ['일식'], interests: ['헬스·러닝', '해외여행', '외국어'] }),
-      add({ email: 'mate3@example.com', code: '264508', name: '최디지털', birth_year: '1997', dept: 'AX', slots: [firstSlot], food_categories: ['한식', '아시안'], interests: ['맛집 탐방', '게임', '영화·OTT'], favorite_thing: '요즘 보는 드라마' })
+      add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', gender: '남성', dept: 'Tax', mbti: 'INFP', slots: [firstSlot] }),
+      add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', gender: '여성', dept: 'Deal', mbti: 'ISTJ', slots: [firstSlot, `${days[1]} 12:00`] }),
+      add({ email: 'mate3@example.com', code: '264508', name: '최디지털', birth_year: '1997', gender: '남성', dept: 'AX', mbti: 'ENTP', slots: [firstSlot] })
     ];
     const g1 = { id: uid(), no: st.settings.next_no++, slot: firstSlot, locked: false, created_at: nowIso() };
     st.groups.push(g1);
@@ -62,12 +60,10 @@
       const start = i % 3;
       add({
         email: `sample${i}@example.com`, code: String(100000 + ((i * 7919) % 900000)),
-        name: names[i % names.length] + (Math.floor(i / names.length) + 1), birth_year: String(1993 + (i % 10)),
-        dept: depts[i % depts.length], dept_open: i % 3 !== 0,
-        slots: ds.flatMap(d => T.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`)),
-        budget: ['무관', '1~1.5만원', '1만원 이하'][i % 3], food_categories: pick(foods, 2, i * 5), spicy: ['보통', '약하게', '맵게'][i % 3],
-        group_sizes: sizeSets[i % sizeSets.length], vibe: ['둘 다 좋아요', '차분하게 대화', '활기차게 대화'][i % 3],
-        interests: pick(interests, 3, i * 11), priority: pri[i % pri.length]
+        name: names[i % names.length] + (Math.floor(i / names.length) + 1), birth_year: String(1995 + (i % 9)),
+        gender: i % 2 ? '남성' : '여성', dept: depts[i % depts.length], mbti: MB[(i * 7) % 16],
+        want_genders: wantG[i % wantG.length], want_depts: wantD[i % wantD.length], group_sizes: sizeSets[i % sizeSets.length],
+        slots: ds.flatMap(d => T.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`))
       });
     }
     state = st;
@@ -93,9 +89,9 @@
     return { autoOn: s.auto_on, time: s.match_time, cutoffMin: s.cutoff_min, includePast: s.include_past, anchor: s.anchor };
   }
   function toMatch(r) {
-    return { id: r.id, name: r.name, dept: r.dept, birthYear: r.birth_year, slots: r.slots || [], budget: r.budget,
-      foodCategories: r.food_categories || [], spicy: r.spicy, groupSizes: r.group_sizes || [], vibe: r.vibe,
-      interests: r.interests || [], priority: r.priority || [], avoid: r.avoid || [] };
+    return { id: r.id, name: r.name, dept: r.dept, gender: r.gender, birthYear: r.birth_year, mbti: r.mbti || '',
+      wantGenders: r.want_genders || [], wantDepts: r.want_depts || [], groupSizes: r.group_sizes || [],
+      slots: r.slots || [], avoid: r.avoid || [] };
   }
   function groupsForMatch() {
     return state.groups.map(g => {
@@ -145,14 +141,17 @@
     submit_application({ p_form, p_code }) {
       const f = p_form || {};
       const email = String(f.email || '').trim().toLowerCase();
-      const slots = f.slots || [], ints = f.interests || [];
-      if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$/.test(email) || !String(f.name || '').trim() || !slots.length || !ints.length || ints.length > 3)
+      const arr = x => Array.isArray(x) ? x : [];
+      const slots = arr(f.slots), sizes = arr(f.group_sizes), wg = arr(f.want_genders), wd = arr(f.want_depts);
+      const within = (xs, ok) => xs.length > 0 && xs.every(x => ok.includes(x));
+      if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$/.test(email) || !String(f.name || '').trim() || !/^(19|20)\d{2}$/.test(f.birth_year || '')
+          || !['남성', '여성'].includes(f.gender) || !['Audit', 'Tax', 'Deal', 'AX'].includes(f.dept) || !M.MBTI_TYPES.includes(f.mbti)
+          || !slots.length || !within(sizes, ['2명', '3~4명', '5명~']) || !within(wg, ['남성', '여성', '상관없음'])
+          || !within(wd, ['Audit', 'Tax', 'Deal', 'AX', '상관없음']))
         return { ok: false, reason: 'invalid' };
       const fields = {
-        name: String(f.name).trim(), birth_year: f.birth_year || '', gender: f.gender || '응답 안 함', dept: f.dept || '',
-        dept_open: !!f.dept_open, slots, allergy: f.allergy || '', budget: f.budget || '무관', food_categories: f.food_categories || [],
-        spicy: f.spicy || '보통', group_sizes: f.group_sizes || [], vibe: f.vibe || '둘 다 좋아요', interests: ints,
-        favorite_thing: f.favorite_thing || '', priority: f.priority || [], created_at: nowIso()
+        name: String(f.name).trim(), birth_year: f.birth_year, gender: f.gender, dept: f.dept, dept_open: true, mbti: f.mbti,
+        want_genders: wg, want_depts: wd, group_sizes: sizes, slots, created_at: nowIso()
       };
       const prev = state.applications.find(a => a.email === email);
       if (prev) {
@@ -174,9 +173,9 @@
       if (g) {
         const ms = state.members.filter(x => x.group_id === g.id).sort((x, y) => x.seq - y.seq);
         const apps = ms.map(x => appById(x.application_id));
-        group = { id: g.id, no: g.no, slot: g.slot, locked: g.locked, deptCount: new Set(apps.map(p => p.dept)).size,
-          members: ms.map((x, i) => ({ id: apps[i].id, name: apps[i].name, email: apps[i].email, deptOpen: apps[i].dept_open,
-            dept: apps[i].dept_open ? apps[i].dept : '', interests: apps[i].interests, favoriteThing: apps[i].favorite_thing, response: x.response })) };
+        group = { id: g.id, no: g.no, slot: g.slot, locked: g.locked,
+          members: ms.map((x, i) => ({ id: apps[i].id, name: apps[i].id === a.id ? apps[i].name : M.maskName(apps[i].name), email: apps[i].email,
+            dept: apps[i].dept, gender: apps[i].gender, birthYear: apps[i].birth_year, mbti: apps[i].mbti, response: x.response })) };
       }
       return { ok: true, me: { id: a.id, name: a.name, email: a.email, slots: a.slots, createdAt: a.created_at }, group };
     },
@@ -201,6 +200,10 @@
         state.groups = state.groups.filter(x => x.id !== g.id);
       }
       return { ok: true };
+    },
+    get_waiting_count() {
+      const assigned = new Set(state.members.map(m => m.application_id));
+      return state.applications.filter(a => !assigned.has(a.id) && M.openSlotsOf(a, settingsCamel()).length).length;
     },
     is_admin() { return !!session; },
     admin_save_matching({ p_groups, p_joins, p_summary, p_auto }) { requireAdmin(); return saveMatching(p_groups, p_joins, p_summary, p_auto); },
@@ -232,7 +235,7 @@
     const list = tables[q.table]();
     const match = r => q.filters.every(([c, v]) => r[c] === v);
     if (q.op === 'insert') {
-      const rows = [].concat(q.payload).map(r => Object.assign({ id: uid(), avoid: [], created_at: nowIso(), gender: '응답 안 함', allergy: '', favorite_thing: '' }, r));
+      const rows = [].concat(q.payload).map(r => Object.assign({ id: uid(), avoid: [], created_at: nowIso(), dept_open: true, mbti: '', want_genders: [], want_depts: [] }, r));
       for (const r of rows) if (state.applications.some(a => a.email === r.email)) return { data: null, error: { message: '이미 있는 이메일이에요: ' + r.email } };
       state.applications.push(...rows); save();
       return { data: null, error: null };

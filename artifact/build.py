@@ -28,6 +28,7 @@ head = re.sub(r'\s*<meta name="viewport"[^>]*>', '', head)
 head = re.sub(r'<title>.*?</title>', '<title>삼일한끼</title>', head)
 # Supabase CDN 대신 가짜 저장소, matching.js는 안에 포함
 head = re.sub(r'\s*<!-- Supabase \(CDN\) -->\s*<script src="https://cdn\.jsdelivr\.net/npm/@supabase/supabase-js@2"></script>', '', head)
+head = re.sub(r'<script src="matching\.js(\?[^"]*)?"></script>', lambda m: '<script src="matching.js"></script>', head)
 head = head.replace('<script src="matching.js"></script>',
                     '<script>\n' + matching + '\n</script>\n  <!-- 백업 데모: Supabase 대신 브라우저 안 가짜 저장소 -->\n  <script>\n' + backend + '\n</script>')
 assert 'supabase-js' not in head and 'src="matching.js"' not in head

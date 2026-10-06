@@ -1,12 +1,39 @@
 // 삼일한끼 매칭 규칙 — 화면(index.html)과 서버 자동 매칭(api/cron-match.js)이 이 파일 하나를 같이 씁니다.
 // 매칭 규칙을 바꾸려면 이 파일만 고치면 돼요.
 (function (root) {
-  const DAYS_SHOWN = 14;              // 일정표: 오늘부터 2주
+  const DAYS_SHOWN = 7;               // 일정표: 오늘 포함 7일
   const timeSlots15Min = ['11:30', '11:45', '12:00', '12:15', '12:30', '12:45', '13:00'];
   const EVENT_YEAR = 2026;           // 날짜 표기("10/7(수)")에 연도가 없어 이 연도로 계산. supabase/01_schema.sql의 _slot_ts와 같게 유지
   const KST_MS = 9 * 60 * 60000;     // 시간 계산은 항상 한국 시간 기준 (서버는 UTC로 돌기 때문)
 
   const sid = x => String(x);
+
+  // ===== MBTI 궁합표 =====
+  const MBTI_TYPES = ['ISTJ', 'ISFJ', 'INFJ', 'INTJ', 'ISTP', 'ISFP', 'INFP', 'INTP', 'ESTP', 'ESFP', 'ENFP', 'ENTP', 'ESTJ', 'ESFJ', 'ENFJ', 'ENTJ'];
+  // 두 MBTI의 궁합 점수(0~100). MBTI_TABLE['INFP']['ENFJ'] = 90 처럼 채우면 됨 (표에 없는 조합은 MBTI_DEFAULT)
+  // ⚠️ 팀에서 정한 궁합표를 받으면 여기에 채운다. 지금은 비어 있어서 모든 조합이 같은 점수.
+  const MBTI_TABLE = {};
+  const MBTI_DEFAULT = 50;
+  function mbtiScore(a, b) {
+    const v = (MBTI_TABLE[a] && MBTI_TABLE[a][b] != null) ? MBTI_TABLE[a][b]
+      : (MBTI_TABLE[b] && MBTI_TABLE[b][a] != null) ? MBTI_TABLE[b][a] : MBTI_DEFAULT;
+    return Math.max(0, Math.min(100, Number(v)));
+  }
+  // 조원 MBTI들의 평균 궁합 (모든 두 사람 쌍의 평균, 반올림). MBTI가 2명 미만이면 null
+  function mbtiAverage(list) {
+    const xs = list.filter(x => MBTI_TYPES.includes(x));
+    let sum = 0, n = 0;
+    for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) { sum += mbtiScore(xs[i], xs[j]); n++; }
+    return n ? Math.round(sum / n) : null;
+  }
+
+  // 결과 화면·메일용 이름 가리기: 최동주 → 최*주, 김철 → 김*, 남궁민수 → 남**수
+  function maskName(name) {
+    const c = [...String(name || '')];
+    if (c.length <= 1) return c.join('');
+    if (c.length === 2) return c[0] + '*';
+    return c[0] + '*'.repeat(c.length - 2) + c[c.length - 1];
+  }
 
   // ===== 날짜·시간 =====
   // 일정표에 보여 줄 날짜: 한국 시간 기준 오늘부터 DAYS_SHOWN일. 예) ['10/5(월)', '10/6(화)', ...]
@@ -55,6 +82,12 @@
   }
 
   // ===== 매칭 점수 =====
+  // 두 사람의 궁합 = MBTI 50점 + 성별 25점 + 부문 25점 (최대 100점)
+  //  - MBTI: 궁합표 점수(0~100)의 절반
+  //  - 성별: 내가 원하는 성별에 상대가 맞으면 12.5점 + 상대가 원하는 성별에 내가 맞으면 12.5점
+  //  - 부문: 같은 방식 ("상관없음"을 고르면 누구든 맞는 것으로)
+  //  - 패스했던 조원: -1000점 (사실상 다시 안 묶임)
+  const SIZE_PENALTY = 25;   // 희망하지 않은 인원 규모의 조에 넣을 때 깎는 점수
   function sizeOk(size, r) {
     const g = r.groupSizes || [];
     if (size <= 2) return g.includes('2명');
@@ -67,23 +100,12 @@
     if (g.includes('5명~')) return 5;
     return 2;
   }
-  function shared(a, b) { return a.filter(x => b.includes(x)); }
+  const wants = (list, v) => !list || !list.length || list.includes('상관없음') || list.includes(v);
   function pairScore(a, b) {
-    const si = shared(a.interests || [], b.interests || []).length;
-    const sf = shared(a.foodCategories || [], b.foodCategories || []).length;
-    let s = si * 2 + sf;
-    if ((a.avoid || []).includes(sid(b.id)) || (b.avoid || []).includes(sid(a.id))) s -= 100; // 패스했던 조원은 피함
-    if (a.budget === b.budget || a.budget === '무관' || b.budget === '무관') s += 1;
-    if (a.vibe === b.vibe || a.vibe === '둘 다 좋아요' || b.vibe === '둘 다 좋아요') s += 1;
-    if (a.spicy === b.spicy) s += 0.5;
-    [[a, b], [b, a]].forEach(([me, other]) => (me.priority || []).forEach((p, idx) => {
-      const w = idx === 0 ? 4 : 3; // 먼저 고른 조건에 더 큰 가중치
-      if (p === '관심사') s += si * w;
-      if (p === '음식 취향') s += sf * w;
-      if (p === '다른 부문' && me.dept !== other.dept) s += w;
-      if (p === '같은 부문' && me.dept === other.dept) s += w;
-      if (p === '나이대' && me.birthYear && other.birthYear && Math.abs(me.birthYear - other.birthYear) <= 3) s += w;
-    }));
+    let s = mbtiScore(a.mbti, b.mbti) * 0.5
+      + (wants(a.wantGenders, b.gender) ? 12.5 : 0) + (wants(b.wantGenders, a.gender) ? 12.5 : 0)
+      + (wants(a.wantDepts, b.dept) ? 12.5 : 0) + (wants(b.wantDepts, a.dept) ? 12.5 : 0);
+    if ((a.avoid || []).includes(sid(b.id)) || (b.avoid || []).includes(sid(a.id))) s -= 1000; // 패스했던 조원은 피함
     return s;
   }
   function groupScore(group, c) { return group.reduce((sum, m) => sum + pairScore(m, c), 0); }
@@ -131,7 +153,7 @@
           }
           const g = [seed];
           while (g.length < size && pool.length) {
-            const fit = c => groupScore(g, c) + (sizeOk(size, c) ? 0 : -8);
+            const fit = c => groupScore(g, c) + (sizeOk(size, c) ? 0 : -SIZE_PENALTY);
             pool.sort((a, b) => fit(b) - fit(a));
             g.push(pool.shift());
           }
@@ -170,7 +192,7 @@
   }
 
   root.SamilMatching = {
-    dayWindow, timeSlots15Min, EVENT_YEAR, sid,
+    dayWindow, timeSlots15Min, EVENT_YEAR, sid, MBTI_TYPES, MBTI_TABLE, mbtiScore, mbtiAverage, maskName, pairScore,
     slotKeyOrder, slotDate, fmtDateTime, lastScheduledBefore, isSlotOpen, openSlotsOf,
     groupDeadline, isDeadlinePassed, responseOf, yesCount, isConfirmed, computeMatching
   };

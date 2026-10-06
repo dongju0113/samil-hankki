@@ -10,9 +10,9 @@ const { notifyPending: realNotify } = require('./_notify.js');
 
 function fromDbApp(r) {
   return {
-    id: r.id, name: r.name, dept: r.dept, birthYear: r.birth_year, slots: r.slots || [],
-    budget: r.budget, foodCategories: r.food_categories || [], spicy: r.spicy, groupSizes: r.group_sizes || [],
-    vibe: r.vibe, interests: r.interests || [], priority: r.priority || [], avoid: r.avoid || []
+    id: r.id, name: r.name, dept: r.dept, gender: r.gender, birthYear: r.birth_year, mbti: r.mbti || '',
+    wantGenders: r.want_genders || [], wantDepts: r.want_depts || [], groupSizes: r.group_sizes || [],
+    slots: r.slots || [], avoid: r.avoid || []
   };
 }
 

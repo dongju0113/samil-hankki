@@ -1,4 +1,4 @@
-// 매칭 규칙(matching.js) 핵심 동작 검사
+// 매칭 규칙(matching.js) 핵심 동작 검사 — MBTI 50% · 성별 25% · 부문 25%
 require('../matching.js')
 const M = globalThis.SamilMatching
 let pass = 0, fail = 0
@@ -6,20 +6,36 @@ const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? '  ✓ ' : '  ✗ '
 
 const now = new Date('2026-10-05T03:00:00Z') // 한국 시간 10/5(월) 12:00
 const settings = { autoOn: true, time: '22:00', cutoffMin: 60, includePast: false }
-const person = (id, slots, extra = {}) => ({ id, name: id, dept: 'Audit', birthYear: '1995', slots, budget: '무관', foodCategories: ['한식'],
-  spicy: '보통', groupSizes: ['3~4명'], vibe: '둘 다 좋아요', interests: ['독서'], priority: [], avoid: [], ...extra })
+const person = (id, slots, extra = {}) => ({ id, name: id, dept: 'Audit', gender: '남성', birthYear: '1998', mbti: 'ENFP', slots,
+  groupSizes: ['3~4명'], wantGenders: ['상관없음'], wantDepts: ['상관없음'], avoid: [], ...extra })
 
-// 일정표: 오늘부터 2주, 한국 시간 기준
+// 일정표: 오늘 포함 7일, 한국 시간 기준
 const days = M.dayWindow(now)
-ok(days.length === 14 && days[0] === '10/5(월)' && days[13] === '10/18(일)', '일정표 = 오늘부터 14일 ' + days[0] + '~' + days[13])
+ok(days.length === 7 && days[0] === '10/5(월)' && days[6] === '10/11(일)', '일정표 = 오늘 포함 7일 ' + days[0] + '~' + days[6])
 ok(M.dayWindow(new Date('2026-10-05T15:00:00Z'))[0] === '10/6(화)', '한국 시간 자정에 날짜가 넘어감')
 ok(M.slotDate('10/7(수) 12:00').toISOString() === '2026-10-07T03:00:00.000Z', '"10/7(수) 12:00" = 한국 시간 정오')
+
+// 이름 가리기
+ok(M.maskName('최동주') === '최*주' && M.maskName('김철') === '김*' && M.maskName('남궁민수') === '남**수' && M.maskName('A') === 'A', '이름 가리기: 최*주 · 김* · 남**수')
+
+// 점수: MBTI 50 + 성별 25 + 부문 25
+const a = person('a', [], { gender: '남성', dept: 'Audit', wantGenders: ['여성'], wantDepts: ['Tax'] })
+const b = person('b', [], { gender: '여성', dept: 'Tax', wantGenders: ['남성'], wantDepts: ['Audit'] })
+ok(M.pairScore(a, b) === 75, `서로 원하는 성별·부문 + MBTI 표 없음(50점의 절반) → 75점 (${M.pairScore(a, b)})`)
+const c = person('c', [], { gender: '남성', dept: 'Audit', wantGenders: ['남성'], wantDepts: ['Audit'] })
+ok(M.pairScore(a, c) === 25 + 12.5 + 12.5, `a는 c가 안 맞고 c는 a가 맞음 → 성별 12.5 + 부문 12.5 + MBTI 25 (${M.pairScore(a, c)})`)
+ok(M.pairScore(person('x', []), person('y', [])) === 75, '"상관없음"끼리는 성별·부문 만점')
+M.MBTI_TABLE.INFP = { ENFJ: 100 }
+ok(M.pairScore(person('x', [], { mbti: 'INFP' }), person('y', [], { mbti: 'ENFJ' })) === 100, 'MBTI 궁합표 반영 (INFP-ENFJ 100점 → MBTI 50점)')
+ok(M.mbtiScore('ENFJ', 'INFP') === 100, 'MBTI 궁합표는 순서 바꿔도 같음')
+delete M.MBTI_TABLE.INFP
+ok(M.mbtiAverage(['ENFP', 'INTJ', 'ISTJ']) === 50 && M.mbtiAverage(['ENFP']) === null, 'MBTI 평균 궁합')
 
 // 같은 칸을 고른 4명 → 한 조
 let r = M.computeMatching({ responses: ['a', 'b', 'c', 'd'].map(id => person(id, ['10/7(수) 12:00'])), groups: [], settings, now })
 ok(r.newGroups.length === 1 && r.newGroups[0].memberIds.length === 4, '같은 시간 4명 → 1개 조')
 
-// 이미 지난 칸·마감(60분 전) 지난 칸은 매칭 안 함
+// 마감(60분 전) 지난 칸은 매칭 안 함
 r = M.computeMatching({ responses: ['a', 'b', 'c'].map(id => person(id, ['10/5(월) 12:30'])), groups: [], settings, now })
 ok(r.newGroups.length === 0, '마감(점심 60분 전) 지난 칸은 매칭 안 함')
 
@@ -28,23 +44,33 @@ r = M.computeMatching({ responses: ['a', 'b', 'c'].map(id => person(id, ['10/8(�
   groups: [{ id: 'G1', slot: '10/8(목) 12:00', locked: true, memberIds: ['a', 'b'], responses: {} }], settings, now })
 ok(r.newGroups.length === 0 && r.joins.length === 0, '강제 확정된 조는 그대로, 혼자 남은 사람은 대기')
 
+// 원하는 성별: 여성만 원하는 사람은 여성과 묶임 (2명 조)
+const two = { groupSizes: ['2명'] }
+r = M.computeMatching({ responses: [
+  person('me', ['10/9(금) 12:00'], { ...two, gender: '여성', wantGenders: ['여성'] }),
+  person('m1', ['10/9(금) 12:00'], { ...two, gender: '남성', wantGenders: ['여성'] }),
+  person('f1', ['10/9(금) 12:00'], { ...two, gender: '여성', wantGenders: ['여성'] }),
+  person('m2', ['10/9(금) 12:00'], { ...two, gender: '남성', wantGenders: ['남성'] })
+], groups: [], settings, now })
+let mine = r.newGroups.find(g => g.memberIds.includes('me'))
+ok(mine && mine.memberIds.includes('f1'), '원하는 성별(여성) 반영 → 여성 조원과 묶임')
+
+// 원하는 부문: Tax를 원하면 Tax와 묶임
+r = M.computeMatching({ responses: [
+  person('me', ['10/9(금) 12:00'], { ...two, dept: 'Audit', wantDepts: ['Tax'] }),
+  person('d1', ['10/9(금) 12:00'], { ...two, dept: 'Deal', wantDepts: ['Deal'] }),
+  person('t1', ['10/9(금) 12:00'], { ...two, dept: 'Tax', wantDepts: ['Audit'] }),
+  person('d2', ['10/9(금) 12:00'], { ...two, dept: 'Deal', wantDepts: ['Deal'] })
+], groups: [], settings, now })
+mine = r.newGroups.find(g => g.memberIds.includes('me'))
+ok(mine && mine.memberIds.includes('t1'), '원하는 부문(Tax) 반영 → Tax 조원과 묶임')
+
 // 패스했던 조원과는 다시 묶이지 않음 (8명이 4명씩 두 조로 나뉠 때)
-// ※ 남는 사람을 기존 조에 붙이는 단계는 avoid를 보지 않음 (원래 규칙 그대로. 예: 6명이면 남은 2명이 a 조에 합류할 수 있음)
-const eight = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(id => person(id, ['10/9(금) 12:00'], { groupSizes: ['3~4명'] }))
+const eight = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(id => person(id, ['10/9(금) 12:00']))
 eight[0].avoid = ['b', 'c']
 r = M.computeMatching({ responses: eight, groups: [], settings, now })
 const withA = r.newGroups.find(g => g.memberIds.includes('a'))
 ok(withA && !withA.memberIds.includes('b') && !withA.memberIds.includes('c'), '패스했던 조원(b, c)과 다른 조')
-
-// 우선 조건: 관심사 가중치
-const pool = [
-  person('me', ['10/12(월) 12:00'], { interests: ['골프'], priority: ['관심사'], groupSizes: ['2명'] }),
-  person('x', ['10/12(월) 12:00'], { interests: ['게임'], groupSizes: ['2명'] }),
-  person('y', ['10/12(월) 12:00'], { interests: ['골프'], groupSizes: ['2명'] })
-]
-r = M.computeMatching({ responses: pool, groups: [], settings, now })
-const mine = r.newGroups.find(g => g.memberIds.includes('me'))
-ok(mine && mine.memberIds.includes('y'), '관심사 우선 → 관심사 같은 사람과 묶임')
 
 ok(/^수동 매칭 10\/5\(월\) 12:00 · /.test(r.summary), '요약 문구 한국 시간 표기: ' + r.summary)
 

@@ -7,12 +7,39 @@
 // 삼일한끼 매칭 규칙 — 화면(index.html)과 서버 자동 매칭(api/cron-match.js)이 이 파일 하나를 같이 씁니다.
 // 매칭 규칙을 바꾸려면 이 파일만 고치면 돼요.
 (function (root) {
-  const DAYS_SHOWN = 14;              // 일정표: 오늘부터 2주
+  const DAYS_SHOWN = 7;               // 일정표: 오늘 포함 7일
   const timeSlots15Min = ['11:30', '11:45', '12:00', '12:15', '12:30', '12:45', '13:00'];
   const EVENT_YEAR = 2026;           // 날짜 표기("10/7(수)")에 연도가 없어 이 연도로 계산. supabase/01_schema.sql의 _slot_ts와 같게 유지
   const KST_MS = 9 * 60 * 60000;     // 시간 계산은 항상 한국 시간 기준 (서버는 UTC로 돌기 때문)
 
   const sid = x => String(x);
+
+  // ===== MBTI 궁합표 =====
+  const MBTI_TYPES = ['ISTJ', 'ISFJ', 'INFJ', 'INTJ', 'ISTP', 'ISFP', 'INFP', 'INTP', 'ESTP', 'ESFP', 'ENFP', 'ENTP', 'ESTJ', 'ESFJ', 'ENFJ', 'ENTJ'];
+  // 두 MBTI의 궁합 점수(0~100). MBTI_TABLE['INFP']['ENFJ'] = 90 처럼 채우면 됨 (표에 없는 조합은 MBTI_DEFAULT)
+  // ⚠️ 팀에서 정한 궁합표를 받으면 여기에 채운다. 지금은 비어 있어서 모든 조합이 같은 점수.
+  const MBTI_TABLE = {};
+  const MBTI_DEFAULT = 50;
+  function mbtiScore(a, b) {
+    const v = (MBTI_TABLE[a] && MBTI_TABLE[a][b] != null) ? MBTI_TABLE[a][b]
+      : (MBTI_TABLE[b] && MBTI_TABLE[b][a] != null) ? MBTI_TABLE[b][a] : MBTI_DEFAULT;
+    return Math.max(0, Math.min(100, Number(v)));
+  }
+  // 조원 MBTI들의 평균 궁합 (모든 두 사람 쌍의 평균, 반올림). MBTI가 2명 미만이면 null
+  function mbtiAverage(list) {
+    const xs = list.filter(x => MBTI_TYPES.includes(x));
+    let sum = 0, n = 0;
+    for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) { sum += mbtiScore(xs[i], xs[j]); n++; }
+    return n ? Math.round(sum / n) : null;
+  }
+
+  // 결과 화면·메일용 이름 가리기: 최동주 → 최*주, 김철 → 김*, 남궁민수 → 남**수
+  function maskName(name) {
+    const c = [...String(name || '')];
+    if (c.length <= 1) return c.join('');
+    if (c.length === 2) return c[0] + '*';
+    return c[0] + '*'.repeat(c.length - 2) + c[c.length - 1];
+  }
 
   // ===== 날짜·시간 =====
   // 일정표에 보여 줄 날짜: 한국 시간 기준 오늘부터 DAYS_SHOWN일. 예) ['10/5(월)', '10/6(화)', ...]
@@ -61,6 +88,12 @@
   }
 
   // ===== 매칭 점수 =====
+  // 두 사람의 궁합 = MBTI 50점 + 성별 25점 + 부문 25점 (최대 100점)
+  //  - MBTI: 궁합표 점수(0~100)의 절반
+  //  - 성별: 내가 원하는 성별에 상대가 맞으면 12.5점 + 상대가 원하는 성별에 내가 맞으면 12.5점
+  //  - 부문: 같은 방식 ("상관없음"을 고르면 누구든 맞는 것으로)
+  //  - 패스했던 조원: -1000점 (사실상 다시 안 묶임)
+  const SIZE_PENALTY = 25;   // 희망하지 않은 인원 규모의 조에 넣을 때 깎는 점수
   function sizeOk(size, r) {
     const g = r.groupSizes || [];
     if (size <= 2) return g.includes('2명');
@@ -73,23 +106,12 @@
     if (g.includes('5명~')) return 5;
     return 2;
   }
-  function shared(a, b) { return a.filter(x => b.includes(x)); }
+  const wants = (list, v) => !list || !list.length || list.includes('상관없음') || list.includes(v);
   function pairScore(a, b) {
-    const si = shared(a.interests || [], b.interests || []).length;
-    const sf = shared(a.foodCategories || [], b.foodCategories || []).length;
-    let s = si * 2 + sf;
-    if ((a.avoid || []).includes(sid(b.id)) || (b.avoid || []).includes(sid(a.id))) s -= 100; // 패스했던 조원은 피함
-    if (a.budget === b.budget || a.budget === '무관' || b.budget === '무관') s += 1;
-    if (a.vibe === b.vibe || a.vibe === '둘 다 좋아요' || b.vibe === '둘 다 좋아요') s += 1;
-    if (a.spicy === b.spicy) s += 0.5;
-    [[a, b], [b, a]].forEach(([me, other]) => (me.priority || []).forEach((p, idx) => {
-      const w = idx === 0 ? 4 : 3; // 먼저 고른 조건에 더 큰 가중치
-      if (p === '관심사') s += si * w;
-      if (p === '음식 취향') s += sf * w;
-      if (p === '다른 부문' && me.dept !== other.dept) s += w;
-      if (p === '같은 부문' && me.dept === other.dept) s += w;
-      if (p === '나이대' && me.birthYear && other.birthYear && Math.abs(me.birthYear - other.birthYear) <= 3) s += w;
-    }));
+    let s = mbtiScore(a.mbti, b.mbti) * 0.5
+      + (wants(a.wantGenders, b.gender) ? 12.5 : 0) + (wants(b.wantGenders, a.gender) ? 12.5 : 0)
+      + (wants(a.wantDepts, b.dept) ? 12.5 : 0) + (wants(b.wantDepts, a.dept) ? 12.5 : 0);
+    if ((a.avoid || []).includes(sid(b.id)) || (b.avoid || []).includes(sid(a.id))) s -= 1000; // 패스했던 조원은 피함
     return s;
   }
   function groupScore(group, c) { return group.reduce((sum, m) => sum + pairScore(m, c), 0); }
@@ -137,7 +159,7 @@
           }
           const g = [seed];
           while (g.length < size && pool.length) {
-            const fit = c => groupScore(g, c) + (sizeOk(size, c) ? 0 : -8);
+            const fit = c => groupScore(g, c) + (sizeOk(size, c) ? 0 : -SIZE_PENALTY);
             pool.sort((a, b) => fit(b) - fit(a));
             g.push(pool.shift());
           }
@@ -176,7 +198,7 @@
   }
 
   root.SamilMatching = {
-    dayWindow, timeSlots15Min, EVENT_YEAR, sid,
+    dayWindow, timeSlots15Min, EVENT_YEAR, sid, MBTI_TYPES, MBTI_TABLE, mbtiScore, mbtiAverage, maskName, pairScore,
     slotKeyOrder, slotDate, fmtDateTime, lastScheduledBefore, isSlotOpen, openSlotsOf,
     groupDeadline, isDeadlinePassed, responseOf, yesCount, isConfirmed, computeMatching
   };
@@ -191,7 +213,7 @@
 // - 규칙은 supabase/01_schema.sql의 함수들과 같게 맞춤 (신청·내 결과·참석·패스·운영자 저장)
 (function (root) {
   const M = root.SamilMatching;
-  const KEY = 'samil-hankki-demo-v2';
+  const KEY = 'samil-hankki-demo-v3';
   const DEMO_EMAIL = 'demo@example.com';
   const DEMO_CODE = '123456';
   const clone = x => JSON.parse(JSON.stringify(x));
@@ -214,16 +236,15 @@
     const T = M.timeSlots15Min;
     const depts = ['Audit', 'Tax', 'Deal', 'AX'];
     const names = ['이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저', '오회계', '서밸류', '문리스크'];
-    const interests = ['헬스·러닝', '골프', '독서', '영화·OTT', '국내여행', '해외여행', '맛집 탐방', '카페·디저트', '외국어', '재테크·부동산', '전시·공연', '게임'];
-    const foods = ['한식', '일식', '중식', '아시안', '양식', '분식', '샐러드', '고기'];
+    const MB = M.MBTI_TYPES;
+    const wantG = [['상관없음'], ['남성'], ['여성'], ['남성', '여성']];
+    const wantD = [['상관없음'], ['Audit', 'Tax'], ['Deal', 'AX'], ['상관없음'], ['Tax', 'Deal', 'AX']];
     const sizeSets = [['3~4명'], ['3~4명', '5명~'], ['2명', '3~4명'], ['3~4명']];
-    const pri = [['관심사'], ['다른 부문'], ['관심사', '다른 부문'], ['나이대'], ['음식 취향'], []];
     const pick = (arr, k, s) => { const out = []; while (out.length < k) { const v = arr[(s * 7919 + 13) % arr.length]; if (!out.includes(v)) out.push(v); s++; } return out; };
     const add = (o) => {
       const row = Object.assign({
-        id: uid(), birth_year: '', gender: '응답 안 함', dept_open: true, allergy: '', budget: '무관', food_categories: [],
-        spicy: '보통', group_sizes: ['3~4명'], vibe: '둘 다 좋아요', favorite_thing: '', priority: [], avoid: [],
-        sample: true, created_at: nowIso()
+        id: uid(), birth_year: '1998', gender: '남성', dept_open: true, mbti: 'ENFP', want_genders: ['상관없음'], want_depts: ['상관없음'],
+        group_sizes: ['3~4명'], avoid: [], sample: true, created_at: nowIso()
       }, o);
       st.applications.push(row);
       return row;
@@ -231,13 +252,12 @@
 
     // 체험용 신청자 + 이미 짜인 1조 (내 결과 화면을 바로 볼 수 있게)
     const firstSlot = `${days[0]} 12:00`;
-    const me = add({ email: DEMO_EMAIL, code: DEMO_CODE, name: '김삼일', birth_year: '1999', dept: 'Audit',
-      slots: [firstSlot, `${days[0]} 12:15`], food_categories: ['한식', '일식'], interests: ['맛집 탐방', '헬스·러닝', '해외여행'],
-      favorite_thing: '주말 러닝 크루', priority: ['관심사', '다른 부문'], sample: false });
+    const me = add({ email: DEMO_EMAIL, code: DEMO_CODE, name: '김삼일', birth_year: '1999', gender: '여성', dept: 'Audit', mbti: 'ENFJ',
+      want_genders: ['상관없음'], want_depts: ['Tax', 'Deal', 'AX'], slots: [firstSlot, `${days[0]} 12:15`], sample: false });
     const mates = [
-      add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', dept: 'Tax', slots: [firstSlot], food_categories: ['한식'], interests: ['맛집 탐방', '골프', '독서'], favorite_thing: '을지로 노포 탐방' }),
-      add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', dept: 'Deal', dept_open: false, slots: [firstSlot, `${days[1]} 12:00`], food_categories: ['일식'], interests: ['헬스·러닝', '해외여행', '외국어'] }),
-      add({ email: 'mate3@example.com', code: '264508', name: '최디지털', birth_year: '1997', dept: 'AX', slots: [firstSlot], food_categories: ['한식', '아시안'], interests: ['맛집 탐방', '게임', '영화·OTT'], favorite_thing: '요즘 보는 드라마' })
+      add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', gender: '남성', dept: 'Tax', mbti: 'INFP', slots: [firstSlot] }),
+      add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', gender: '여성', dept: 'Deal', mbti: 'ISTJ', slots: [firstSlot, `${days[1]} 12:00`] }),
+      add({ email: 'mate3@example.com', code: '264508', name: '최디지털', birth_year: '1997', gender: '남성', dept: 'AX', mbti: 'ENTP', slots: [firstSlot] })
     ];
     const g1 = { id: uid(), no: st.settings.next_no++, slot: firstSlot, locked: false, created_at: nowIso() };
     st.groups.push(g1);
@@ -249,12 +269,10 @@
       const start = i % 3;
       add({
         email: `sample${i}@example.com`, code: String(100000 + ((i * 7919) % 900000)),
-        name: names[i % names.length] + (Math.floor(i / names.length) + 1), birth_year: String(1993 + (i % 10)),
-        dept: depts[i % depts.length], dept_open: i % 3 !== 0,
-        slots: ds.flatMap(d => T.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`)),
-        budget: ['무관', '1~1.5만원', '1만원 이하'][i % 3], food_categories: pick(foods, 2, i * 5), spicy: ['보통', '약하게', '맵게'][i % 3],
-        group_sizes: sizeSets[i % sizeSets.length], vibe: ['둘 다 좋아요', '차분하게 대화', '활기차게 대화'][i % 3],
-        interests: pick(interests, 3, i * 11), priority: pri[i % pri.length]
+        name: names[i % names.length] + (Math.floor(i / names.length) + 1), birth_year: String(1995 + (i % 9)),
+        gender: i % 2 ? '남성' : '여성', dept: depts[i % depts.length], mbti: MB[(i * 7) % 16],
+        want_genders: wantG[i % wantG.length], want_depts: wantD[i % wantD.length], group_sizes: sizeSets[i % sizeSets.length],
+        slots: ds.flatMap(d => T.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`))
       });
     }
     state = st;
@@ -280,9 +298,9 @@
     return { autoOn: s.auto_on, time: s.match_time, cutoffMin: s.cutoff_min, includePast: s.include_past, anchor: s.anchor };
   }
   function toMatch(r) {
-    return { id: r.id, name: r.name, dept: r.dept, birthYear: r.birth_year, slots: r.slots || [], budget: r.budget,
-      foodCategories: r.food_categories || [], spicy: r.spicy, groupSizes: r.group_sizes || [], vibe: r.vibe,
-      interests: r.interests || [], priority: r.priority || [], avoid: r.avoid || [] };
+    return { id: r.id, name: r.name, dept: r.dept, gender: r.gender, birthYear: r.birth_year, mbti: r.mbti || '',
+      wantGenders: r.want_genders || [], wantDepts: r.want_depts || [], groupSizes: r.group_sizes || [],
+      slots: r.slots || [], avoid: r.avoid || [] };
   }
   function groupsForMatch() {
     return state.groups.map(g => {
@@ -332,14 +350,17 @@
     submit_application({ p_form, p_code }) {
       const f = p_form || {};
       const email = String(f.email || '').trim().toLowerCase();
-      const slots = f.slots || [], ints = f.interests || [];
-      if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$/.test(email) || !String(f.name || '').trim() || !slots.length || !ints.length || ints.length > 3)
+      const arr = x => Array.isArray(x) ? x : [];
+      const slots = arr(f.slots), sizes = arr(f.group_sizes), wg = arr(f.want_genders), wd = arr(f.want_depts);
+      const within = (xs, ok) => xs.length > 0 && xs.every(x => ok.includes(x));
+      if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$/.test(email) || !String(f.name || '').trim() || !/^(19|20)\d{2}$/.test(f.birth_year || '')
+          || !['남성', '여성'].includes(f.gender) || !['Audit', 'Tax', 'Deal', 'AX'].includes(f.dept) || !M.MBTI_TYPES.includes(f.mbti)
+          || !slots.length || !within(sizes, ['2명', '3~4명', '5명~']) || !within(wg, ['남성', '여성', '상관없음'])
+          || !within(wd, ['Audit', 'Tax', 'Deal', 'AX', '상관없음']))
         return { ok: false, reason: 'invalid' };
       const fields = {
-        name: String(f.name).trim(), birth_year: f.birth_year || '', gender: f.gender || '응답 안 함', dept: f.dept || '',
-        dept_open: !!f.dept_open, slots, allergy: f.allergy || '', budget: f.budget || '무관', food_categories: f.food_categories || [],
-        spicy: f.spicy || '보통', group_sizes: f.group_sizes || [], vibe: f.vibe || '둘 다 좋아요', interests: ints,
-        favorite_thing: f.favorite_thing || '', priority: f.priority || [], created_at: nowIso()
+        name: String(f.name).trim(), birth_year: f.birth_year, gender: f.gender, dept: f.dept, dept_open: true, mbti: f.mbti,
+        want_genders: wg, want_depts: wd, group_sizes: sizes, slots, created_at: nowIso()
       };
       const prev = state.applications.find(a => a.email === email);
       if (prev) {
@@ -361,9 +382,9 @@
       if (g) {
         const ms = state.members.filter(x => x.group_id === g.id).sort((x, y) => x.seq - y.seq);
         const apps = ms.map(x => appById(x.application_id));
-        group = { id: g.id, no: g.no, slot: g.slot, locked: g.locked, deptCount: new Set(apps.map(p => p.dept)).size,
-          members: ms.map((x, i) => ({ id: apps[i].id, name: apps[i].name, email: apps[i].email, deptOpen: apps[i].dept_open,
-            dept: apps[i].dept_open ? apps[i].dept : '', interests: apps[i].interests, favoriteThing: apps[i].favorite_thing, response: x.response })) };
+        group = { id: g.id, no: g.no, slot: g.slot, locked: g.locked,
+          members: ms.map((x, i) => ({ id: apps[i].id, name: apps[i].id === a.id ? apps[i].name : M.maskName(apps[i].name), email: apps[i].email,
+            dept: apps[i].dept, gender: apps[i].gender, birthYear: apps[i].birth_year, mbti: apps[i].mbti, response: x.response })) };
       }
       return { ok: true, me: { id: a.id, name: a.name, email: a.email, slots: a.slots, createdAt: a.created_at }, group };
     },
@@ -388,6 +409,10 @@
         state.groups = state.groups.filter(x => x.id !== g.id);
       }
       return { ok: true };
+    },
+    get_waiting_count() {
+      const assigned = new Set(state.members.map(m => m.application_id));
+      return state.applications.filter(a => !assigned.has(a.id) && M.openSlotsOf(a, settingsCamel()).length).length;
     },
     is_admin() { return !!session; },
     admin_save_matching({ p_groups, p_joins, p_summary, p_auto }) { requireAdmin(); return saveMatching(p_groups, p_joins, p_summary, p_auto); },
@@ -419,7 +444,7 @@
     const list = tables[q.table]();
     const match = r => q.filters.every(([c, v]) => r[c] === v);
     if (q.op === 'insert') {
-      const rows = [].concat(q.payload).map(r => Object.assign({ id: uid(), avoid: [], created_at: nowIso(), gender: '응답 안 함', allergy: '', favorite_thing: '' }, r));
+      const rows = [].concat(q.payload).map(r => Object.assign({ id: uid(), avoid: [], created_at: nowIso(), dept_open: true, mbti: '', want_genders: [], want_depts: [] }, r));
       for (const r of rows) if (state.applications.some(a => a.email === r.email)) return { data: null, error: { message: '이미 있는 이메일이에요: ' + r.email } };
       state.applications.push(...rows); save();
       return { data: null, error: null };
@@ -484,10 +509,11 @@
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
-  <!-- Apple & Inter Font Stack -->
+  <!-- 글꼴: 제목·버튼은 주아(Jua), 본문은 Pretendard -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Jua&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 
   <script>
     tailwind.config = {
@@ -495,20 +521,20 @@
         extend: {
           colors: {
             pwc: {
-              canvas: '#FFF8F5',
-              soft: '#FFF0EA',
+              canvas: '#FFFFFF',
+              soft: '#FFF0E6',
               light: '#FFE6DC',
-              orange: '#F04E23',
-              'orange-hover': '#D93E15',
+              orange: '#D04A02',
+              'orange-hover': '#B03E02',
               gold: '#EB8C00',
-              border: '#FED3C4'
+              border: '#EBCDB9'
             },
-            ink: '#1D1D1F',
-            muted: '#86868B',
-            hairline: '#EFEAE6'
+            ink: '#3B2418',
+            muted: '#7A5646',
+            hairline: '#F1D9C9'
           },
           boxShadow: {
-            'pwc': '0 4px 20px -2px rgba(240, 78, 35, 0.08), 0 2px 6px rgba(0,0,0,0.03)'
+            'pwc': 'none'
           }
         }
       }
@@ -517,45 +543,233 @@
   <style>
     /* 휴대폰 노치·하단 바 영역에 내용이 가리지 않도록 */
     :root { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
-    html { scroll-padding-top: env(safe-area-inset-top, 0px); background: #FFF8F5; }
+    html { scroll-padding-top: env(safe-area-inset-top, 0px); background: #FFE7D6; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-      background: linear-gradient(135deg, #FFFFFF 0%, #FFF8F5 50%, #FFF2EC 100%);
-      background-attachment: fixed;
+      font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      background: #FFFFFF;
       color: #1D1D1F;
       -webkit-font-smoothing: antialiased;
     }
-    .apple-display-lg { font-size: 30px; font-weight: 700; line-height: 1.2; letter-spacing: -0.374px; }
-    .apple-caption-strong { font-size: 14px; font-weight: 600; letter-spacing: -0.224px; }
-    .apple-caption { font-size: 14px; font-weight: 400; letter-spacing: -0.224px; }
-    .apple-fine-print { font-size: 12px; letter-spacing: -0.12px; }
-    .apple-press:active { transform: scale(0.97); transition: transform 0.1s ease; }
+    .brand-logo { font-family: "Jua", sans-serif; font-size: 22px; font-weight: 400; letter-spacing: -0.3px; }
+    .apple-display-lg { font-family: "Jua", sans-serif; font-size: 30px; font-weight: 400; line-height: 1.3; letter-spacing: -0.4px; color: #3B2418; }
+    .apple-caption-strong { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
+    .apple-caption { font-size: 14px; font-weight: 400; letter-spacing: -0.2px; }
+    .apple-fine-print { font-size: 12px; letter-spacing: -0.1px; }
+    .apple-press:active { transform: scale(0.98); transition: transform 0.1s ease; }
     .custom-checkbox {
-      appearance: none; -webkit-appearance: none; width: 16px; height: 16px; flex-shrink: 0;
-      border: 1px solid #FED3C4; border-radius: 4px; background: #fff center/100% no-repeat; cursor: pointer;
+      appearance: none; -webkit-appearance: none; width: 18px; height: 18px; flex-shrink: 0;
+      border: 1px solid #CFC7C1; border-radius: 5px; background: #fff center/100% no-repeat; cursor: pointer;
     }
     .custom-checkbox:checked {
-      background-color: #F04E23; border-color: #F04E23;
+      background-color: #D04A02; border-color: #D04A02;
       background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 8.586l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
     }
-    .custom-checkbox:focus-visible { outline: 3px solid #FED3C4; outline-offset: 2px; }
+    .custom-checkbox:focus-visible { outline: 3px solid #F6C9B3; outline-offset: 2px; }
     .no-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
-    .no-scrollbar::-webkit-scrollbar-thumb { background: #FED3C4; border-radius: 9999px; }
+    .no-scrollbar::-webkit-scrollbar-thumb { background: #E7E1DC; border-radius: 9999px; }
     /* 드래그 선택 중 글자 선택 방지 (입력칸은 그대로 입력 가능) */
     .user-select-none { user-select: none; -webkit-user-select: none; }
     input, textarea, select { user-select: text; -webkit-user-select: text; }
     /* ===== 시작 페이지 ===== */
-    .landing-title { font-family: "Jua", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; font-size: clamp(56px, 15vw, 84px); line-height: 1; letter-spacing: -1px; color: #F04E23; }
-    .landing-kicker { font-size: 13px; font-weight: 600; color: #3F6B45; letter-spacing: -0.2px; }
-    .landing-cta { font-family: "Jua", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; font-size: clamp(24px, 6.5vw, 30px); letter-spacing: -0.3px; }
-    .steam { animation: steam 3.2s ease-in-out infinite; transform-origin: center bottom; }
-    .steam.s2 { animation-delay: .8s; } .steam.s3 { animation-delay: 1.6s; }
-    @keyframes steam { 0% { opacity: 0; transform: translateY(6px); } 40% { opacity: .9; } 100% { opacity: 0; transform: translateY(-14px); } }
-    @media (prefers-reduced-motion: reduce) { .steam { animation: none; opacity: .7; } }
+    .landing-title { font-family: "Jua", sans-serif; font-size: clamp(64px, 19vw, 88px); font-weight: 800; line-height: 1; letter-spacing: -2.5px; color: #48484D; margin-left: -0.05em; } /* 큰 글자 앞 여백만큼 당겨서 아래 문장과 왼쪽 줄 맞춤 */
+    /* "한끼" 글자만: 연한 주황 → 연한 골드 그라데이션 */
+    /* "삼일" 글자만: 진회색 → 연회색 그라데이션 */
+    .landing-gradient-dark {
+      display: inline-block; padding-bottom: 0.06em;
+      background: linear-gradient(135deg, #2E2E33 0%, #4A4A50 50%, #6E6E75 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: #48484D;
+    }
+    .landing-gradient {
+      display: inline-block; padding-bottom: 0.06em;
+      background: linear-gradient(135deg, #E8662C 0%, #F0883A 50%, #F4A84A 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: #E8662C;
+    }
+    .landing-kicker { font-size: 13px; font-weight: 600; color: #1D1D1F; letter-spacing: 0.1px; }
+    /* ===== 첫 화면 (스크롤형 랜딩) ===== */
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(110% 55% at 100% 0%, rgba(255, 186, 140, .75) 0%, rgba(255, 186, 140, 0) 62%),
+        radial-gradient(90% 45% at 0% 58%, rgba(247, 178, 170, .55) 0%, rgba(247, 178, 170, 0) 62%),
+        linear-gradient(180deg, #FFF5EC 0%, #FFE7D6 48%, #FFD5BC 100%);
+    }
+    .hk { --brown: #3B2418; --peach: #FBDCC6; --sign: #D9622B; --gold: #F6BC45; --butter: #F9D66B; --pink: #F07C8C;
+      color: var(--brown); display: flex; flex-direction: column; gap: 56px; padding: 12px 0 28px; }
+    .hk-display { font-family: "Jua", "Pretendard Variable", sans-serif; font-weight: 400; }
+    /* 히어로 */
+    .hk-hero { display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; }
+    .hk-badge { display: inline-flex; align-items: center; gap: 8px; }
+    .hk-pill { padding: 6px 14px; border: 2px solid var(--brown); border-radius: 9999px; background: #FFFFFF; font-size: 13px; font-weight: 700; }
+    .hk-title { margin: 0; font-size: clamp(46px, 13.5vw, 64px); line-height: 1.12; letter-spacing: -1px; text-wrap: balance; }
+    .hk-title span { background: linear-gradient(120deg, #C94402 0%, #E0601A 55%, #E5771C 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: #D04A02; }
+    .hk-lead { margin: 0; font-size: 16px; line-height: 1.7; color: #5A4034; }
+    .hk-cta { display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 28px; border: none; border-radius: 9999px;
+      background: var(--brown); color: #FFFFFF; font-size: 18px; cursor: pointer; box-shadow: 0 5px 0 rgba(59, 36, 24, .25); transition: transform .1s ease, box-shadow .1s ease; }
+    .hk-cta:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(59, 36, 24, .25); }
+    .hk-cta:focus-visible, .hk-link:focus-visible, .hk-spin:focus-visible, .hk-lever:focus-visible { outline: 3px solid #F6A57A; outline-offset: 3px; }
+    .hk-link { padding: 6px 2px; border: none; background: none; color: #5A4034; font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+    /* 슬롯머신 */
+    .hk-machine-wrap { display: flex; justify-content: center; padding-top: 44px; }
+    .hk-machine { position: relative; width: 300px; } /* 몸통을 화면 가운데 축에 맞춤 (레버는 오른쪽으로만 튀어나옴) */
+    .hk-antenna { position: absolute; left: 50%; top: -44px; width: 30px; margin-left: -15px; display: flex; flex-direction: column; align-items: center; }
+    .hk-antenna svg { width: 30px; height: 28px; animation: hk-bob 2.4s ease-in-out infinite; }
+    .hk-antenna i { width: 4px; height: 18px; background: var(--brown); border-radius: 2px; }
+    @keyframes hk-bob { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-3px) scale(1.08); } }
+    .hk-sparkle { position: absolute; right: -18px; top: -38px; width: 34px; height: 40px; }
+    .hk-cab { position: relative; z-index: 1; padding: 14px 14px 20px; background: var(--peach); border: 4px solid var(--brown); border-radius: 36px 36px 28px 28px; box-shadow: 8px 8px 0 rgba(59, 36, 24, .12); }
+    .hk-sign { padding: 8px 10px 10px; background: var(--sign); border: 3px solid var(--brown); border-radius: 18px; text-align: center; }
+    .hk-bulbs { display: flex; justify-content: center; gap: 9px; }
+    .hk-bulbs i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--brown); background: #F3D9A6; animation: hk-bulb 1.2s steps(1) infinite; }
+    .hk-bulbs i:nth-child(even) { animation-delay: .6s; }
+    .hk-machine.spinning .hk-bulbs i { animation-duration: .3s; }
+    .hk-machine.spinning .hk-bulbs i:nth-child(even) { animation-delay: .15s; }
+    @keyframes hk-bulb { 0% { background: var(--gold); box-shadow: 0 0 8px rgba(246, 188, 69, .9); } 50% { background: #F3D9A6; box-shadow: none; } }
+    .hk-sign-text { margin: 6px 0 0; font-size: 21px; color: #FFFFFF; letter-spacing: -0.3px; }
+    .hk-face { position: relative; height: 46px; margin: 12px auto 10px; width: 170px; }
+    .hk-eye { position: absolute; top: 8px; width: 13px; height: 17px; border-radius: 50%; background: var(--brown); animation: hk-blink 4.5s infinite; transition: transform .15s ease; }
+    .hk-eye::after { content: ""; position: absolute; top: 3px; left: 3px; width: 4px; height: 4px; border-radius: 50%; background: #FFFFFF; }
+    .hk-eye.l { left: 48px; } .hk-eye.r { right: 48px; }
+    @keyframes hk-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+    .hk-machine.spinning .hk-eye { animation: none; transform: scaleY(.2); }
+    .hk-blush { position: absolute; top: 20px; width: 24px; height: 12px; border-radius: 50%; background: #F7A9A8; }
+    .hk-blush.l { left: 8px; } .hk-blush.r { right: 8px; }
+    .hk-mouth { position: absolute; left: 50%; top: 16px; width: 26px; height: 12px; margin-left: -13px; }
+    .hk-reels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 7px; background: var(--brown); border-radius: 18px; }
+    .hk-window { height: 84px; overflow: hidden; border-radius: 12px; }
+    .hk-strip { will-change: transform; }
+    .hk-machine.spinning .hk-strip { filter: blur(.8px); }
+    .hk-tile { height: 84px; padding: 2px 0; box-sizing: border-box; }
+    .hk-tile-in { height: 100%; border-radius: 11px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 15px; color: var(--brown); }
+    .hk-tile-in svg { width: 30px; height: 30px; }
+    .hk-caption { margin: 14px 0 0; min-height: 20px; text-align: center; font-size: 13.5px; font-weight: 700; }
+    .hk-spin { display: block; margin: 14px auto 0; min-height: 50px; padding: 0 26px; border: 3px solid var(--brown); border-radius: 9999px; background: var(--butter);
+      color: var(--brown); font-size: 19px; cursor: pointer; box-shadow: 0 4px 0 var(--brown); transition: transform .1s ease, box-shadow .1s ease; }
+    .hk-spin:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--brown); }
+    .hk-spin:disabled { opacity: .6; cursor: default; }
+    .hk-feet { display: flex; justify-content: space-between; width: 72%; margin: -4px auto 0; }
+    .hk-feet i { width: 52px; height: 18px; background: var(--sign); border: 4px solid var(--brown); border-top: none; border-radius: 0 0 14px 14px; }
+    .hk-lever { position: absolute; right: -34px; top: 176px; z-index: 0; width: 36px; height: 120px; padding: 0; border: none; background: transparent; cursor: pointer; }
+    .hk-lever:disabled { cursor: default; }
+    .hk-lever-base { position: absolute; left: 0; bottom: 6px; width: 22px; height: 36px; background: var(--sign); border: 3px solid var(--brown); border-left: none; border-radius: 0 10px 10px 0; }
+    .hk-lever-arm { position: absolute; left: 16px; bottom: 32px; width: 6px; height: 70px; margin-left: -3px; background: var(--brown); border-radius: 3px; transform-origin: 50% 100%; }
+    .hk-lever-knob { position: absolute; top: -22px; left: 50%; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; background: var(--pink); border: 3px solid var(--brown); box-shadow: inset -3px -3px 0 rgba(0, 0, 0, .12); }
+    .hk-lever-knob::after { content: ""; position: absolute; top: 4px; left: 5px; width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, .7); }
+    .hk-machine.pulling .hk-lever-arm { animation: hk-pull .7s ease; }
+    @keyframes hk-pull { 0% { transform: scaleY(1); } 35% { transform: scaleY(-1); } 100% { transform: scaleY(1); } }
+    .hk-bubble { position: absolute; right: -30px; top: 112px; z-index: 2; padding: 4px 9px; background: #FFFFFF; border: 2.5px solid var(--brown); border-radius: 12px; font-size: 12px; font-weight: 800; white-space: nowrap; animation: hk-wiggle 2s ease-in-out infinite; }
+    @keyframes hk-wiggle { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-6deg); } }
+    .hk-machine.win .hk-cab { animation: hk-hop .8s ease; }
+    @keyframes hk-hop { 0%, 100% { translate: 0 0; } 25% { translate: 0 -10px; } 50% { translate: 0 0; } 75% { translate: 0 -4px; } }
+    /* 진행 순서 띠 */
+    .hk-section-label { margin: 0 0 12px; font-size: 14px; font-weight: 700; color: #7A5646; text-align: center; }
+    .hk-steps { margin: 0; padding: 18px 12px; list-style: none; display: flex; align-items: center; justify-content: space-around; gap: 4px; background: var(--brown); border-radius: 24px; color: #FFFFFF; }
+    .hk-steps li { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 15px; white-space: nowrap; text-align: center; }
+    .hk-steps b { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--butter); color: var(--brown); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 400; }
+    .hk-steps .arrow { color: var(--butter); font-size: 18px; }
+    .hk-steps li.arrow { align-self: flex-start; margin-top: 3px; }
+    /* 마무리 */
+    .hk-end { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 32px 20px 24px; text-align: center; background: rgba(255, 255, 255, .55); border-radius: 28px; }
+    .hk-end h2 { margin: 0; font-size: 28px; line-height: 1.3; }
+    .hk-end p { margin: 0; font-size: 13px; color: #6B5044; text-wrap: balance; word-break: keep-all; }
+    .hk { word-break: keep-all; }
+    .hk-admin { margin-top: 4px; padding: 6px; border: none; background: none; font-size: 12px; color: #8A6A5C; cursor: pointer; }
+    /* 스크롤하면 차례로 등장 */
+    .hk-reveal { transition: opacity .6s ease, transform .6s ease; }
+    .hk-reveal.pre { opacity: 0; transform: translateY(28px); }
+    @media (prefers-reduced-motion: reduce) {
+      .hk-reveal, .hk-reveal.pre { opacity: 1; transform: none; transition: none; }
+      .hk-antenna svg, .hk-bulbs i, .hk-eye, .hk-bubble, .hk-machine.pulling .hk-lever-arm, .hk-machine.win .hk-cab { animation: none !important; }
+      .hk-machine.spinning .hk-strip { filter: none; }
+    }
+    /* ===== 1단계: 한 칸씩 차례로 나타나는 입력 ===== */
+    .seq-hidden { display: none !important; }
+    .seq-in { animation: seq-in .35s ease both; }
+    @keyframes seq-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .seq-skip { margin-top: 6px; padding: 4px 2px; border: none; background: none; font-size: 12px; font-weight: 600; color: #6E6E73; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+    @media (prefers-reduced-motion: reduce) { .seq-in { animation: none; } }
+    /* ===== 전체 톤: 첫 화면과 같은 살구빛 배경 · 진갈색 글씨 · 둥근 버튼 ===== */
+    .hk-display, .apple-display-lg, .brand-logo { font-synthesis: none; }
+    .hk-btn { font-family: "Jua", "Pretendard Variable", sans-serif !important; font-weight: 400 !important; font-size: 17px !important;
+      box-shadow: 0 4px 0 rgba(59, 36, 24, .22); }
+    .hk-btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 2px 0 rgba(59, 36, 24, .22); }
+    .hk-btn:disabled { box-shadow: none; }
+    .hk-btn-sub { font-family: "Jua", "Pretendard Variable", sans-serif !important; font-weight: 400 !important; font-size: 16px !important; }
+    .tone-card { background: rgba(255, 255, 255, .62); border-radius: 28px; padding: 22px 18px; }
+    @media (min-width: 768px) { .tone-card { padding: 28px; } }
+    /* ===== 신청 완료 연출: 요약 카드가 접히고 → 축하 입자 → 결과가 차례로 등장 ===== */
+    #celebrateCanvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
+    .collapse-out { animation: collapse-out .5s cubic-bezier(.5, 0, .75, 0) forwards; }
+    @keyframes collapse-out { to { opacity: 0; transform: scale(.82) translateY(-14px); filter: blur(2px); } }
+    .done-card { word-break: keep-all; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+    .done-pill { display: inline-block; padding: 5px 14px; border-radius: 9999px; background: #3B2418; color: #FFFFFF; font-size: 13px; }
+    .done-code { font-family: "Jua", sans-serif; font-size: 52px; line-height: 1; letter-spacing: .12em; padding-left: .12em; color: #D04A02; font-variant-numeric: tabular-nums; }
+    .done-stats { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .done-stat { min-width: 0; padding: 12px 10px; border-radius: 18px; background: #FFFFFF; text-align: center; }
+    .done-stat dt { font-size: 12px; color: #7A5646; }
+    .done-stat dd { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: #3B2418; word-break: break-all; }
+    .celebrate .done-card > * { animation: done-rise .55s cubic-bezier(.2, .8, .2, 1) both; }
+    .celebrate .done-card > *:nth-child(1) { animation-delay: .05s; }
+    .celebrate .done-card > *:nth-child(2) { animation-delay: .15s; }
+    .celebrate .done-card > *:nth-child(3) { animation-delay: .3s; animation-name: done-pop; }
+    .celebrate .done-card > *:nth-child(4) { animation-delay: .55s; }
+    .celebrate .done-card > *:nth-child(5) { animation-delay: .7s; }
+    .celebrate .done-card > *:nth-child(6) { animation-delay: .85s; }
+    @keyframes done-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+    @keyframes done-pop { 0% { opacity: 0; transform: scale(.6); } 60% { opacity: 1; transform: scale(1.06); } 100% { transform: scale(1); } }
+    /* 위에서 내려오는 '달성' 알림 */
+    #achieveToast { position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); z-index: 61; width: min(92vw, 360px);
+      display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 20px; background: rgba(255, 255, 255, .92);
+      box-shadow: 0 12px 30px -10px rgba(59, 36, 24, .35); transform: translate(-50%, -140%); transition: transform .55s cubic-bezier(.2, .9, .25, 1.15); text-align: left; }
+    #achieveToast.show { transform: translate(-50%, 0); }
+    #achieveToast .badge { flex-shrink: 0; width: 46px; height: 46px; border-radius: 14px; background: linear-gradient(145deg, #E8662C, #C94402); display: flex; align-items: center; justify-content: center; }
+    #achieveToast b { display: block; font-family: "Jua", sans-serif; font-weight: 400; font-size: 16px; color: #3B2418; }
+    #achieveToast span { display: block; font-size: 12px; color: #7A5646; }
+    @media (prefers-reduced-motion: reduce) {
+      .collapse-out, .celebrate .done-card > * { animation: none !important; }
+      #achieveToast { transition: none; }
+    }
+    /* ===== 왼쪽 위 로고: PwC + 삼일한끼 (등장 애니메이션 + 은은한 움직임) ===== */
+    .brand-lockup { display: inline-flex; align-items: center; gap: 9px; padding: 4px 2px; border: none; background: none; cursor: pointer; }
+    .brand-lockup:focus-visible { outline: 3px solid #F6A57A; outline-offset: 4px; border-radius: 8px; }
+    .bl-pwc { display: block; position: relative; top: -3px; height: 28px; width: auto; animation: bl-fade .7s ease both; } /* pwc 글자 몸통을 삼일한끼 글자 높이에 맞춤 */
+    .bl-bar { width: 1.5px; height: 22px; border-radius: 1px; background: #3B2418; opacity: .28; animation: bl-grow .45s .35s ease both; }
+    .bl-word { display: inline-flex; font-size: 23px; line-height: 1; }
+    .bl-ch { display: inline-block; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      animation: bl-pop .6s var(--d) cubic-bezier(.2, .9, .25, 1.35) both, bl-wave 7s calc(var(--d) + 1.6s) ease-in-out infinite; }
+    .bl-ch.dark { background-image: linear-gradient(135deg, #2E2E33 0%, #6E6E75 100%); color: #48484D; }
+    .bl-ch.hot { background-image: linear-gradient(110deg, #E8662C 0%, #F0883A 30%, #F8B46E 50%, #F0883A 70%, #E8662C 100%); background-size: 300% 100%; color: #E8662C;
+      animation: bl-pop .6s var(--d) cubic-bezier(.2, .9, .25, 1.35) both, bl-wave 7s calc(var(--d) + 1.6s) ease-in-out infinite, bl-shine 3.6s 1.4s ease-in-out infinite; }
+    .brand-lockup:hover .bl-ch { animation-play-state: running; }
+    @keyframes bl-fade { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+    @keyframes bl-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    @keyframes bl-pop { from { opacity: 0; transform: translateY(9px) scale(.75); } to { opacity: 1; transform: none; } }
+    @keyframes bl-wave { 0%, 86%, 100% { transform: none; } 90% { transform: translateY(-4px); } 94% { transform: translateY(1px); } }
+    @keyframes bl-shine { 0% { background-position: 100% 0; } 55%, 100% { background-position: 0% 0; } }
+    @media (prefers-reduced-motion: reduce) { .bl-pwc, .bl-bar, .bl-ch { animation: none !important; } }
+    /* ===== "한끼 매칭 시작하기" 버튼: 로고처럼 글자가 톡톡 튀고 빛이 지나감 ===== */
+    .hk-cta { position: relative; overflow: hidden; }
+    .hk-cta::after { content: ""; position: absolute; top: -20%; bottom: -20%; left: -40%; width: 30%; pointer-events: none;
+      background: linear-gradient(100deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, .28) 50%, rgba(255, 255, 255, 0) 100%);
+      transform: skewX(-18deg); animation: cta-sweep 3.6s 1.6s ease-in-out infinite; }
+    @keyframes cta-sweep { 0% { left: -40%; } 45%, 100% { left: 130%; } }
+    .cta-ch { display: inline-block; white-space: pre;
+      animation: bl-pop .55s var(--d) cubic-bezier(.2, .9, .25, 1.35) both, bl-wave 7s calc(var(--d) + 2s) ease-in-out infinite; }
+    .cta-ch.hot { -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: #FFC08A;
+      background-image: linear-gradient(110deg, #FF9F5A 0%, #FFC08A 30%, #FFE6C8 50%, #FFC08A 70%, #FF9F5A 100%); background-size: 300% 100%;
+      animation: bl-pop .55s var(--d) cubic-bezier(.2, .9, .25, 1.35) both, bl-wave 7s calc(var(--d) + 2s) ease-in-out infinite, bl-shine 3.6s 1.4s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { .hk-cta::after, .cta-ch { animation: none !important; } }
     #toast { transition: opacity .25s ease, transform .25s ease; }
     #toast.hide { opacity: 0; transform: translate(-50%, -12px) !important; pointer-events: none; }
+      /* 실시간 매칭 대기 인원 */
+    .waiting-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.75); border: 1px solid #F3D9C6; font-size: 12.5px; font-weight: 700; color: #3B2418; }
+    .waiting-pill[hidden] { display: none; }
+    .waiting-dot { width: 7px; height: 7px; border-radius: 50%; background: #D04A02; box-shadow: 0 0 0 0 rgba(208,74,2,.5); animation: waitingPulse 1.8s ease-out infinite; }
+    @keyframes waitingPulse { 0% { box-shadow: 0 0 0 0 rgba(208,74,2,.45); } 70% { box-shadow: 0 0 0 7px rgba(208,74,2,0); } 100% { box-shadow: 0 0 0 0 rgba(208,74,2,0); } }
+    @media (prefers-reduced-motion: reduce) { .waiting-dot { animation: none; } }
   </style>
-<div class="min-h-screen py-8 md:py-12 px-4 flex flex-col items-center">
+<div class="min-h-screen py-6 md:py-12 px-5 flex flex-col items-center">
 
   <!-- 백업 데모 안내 -->
   <aside id="demoBanner" class="w-full max-w-[640px] mx-auto mb-6 rounded-2xl border border-pwc-border bg-white/90 shadow-pwc px-4 py-3 space-y-2" aria-label="백업 데모 안내">
@@ -574,246 +788,166 @@
 <main class="w-full max-w-[640px] mx-auto">
 
     <!-- 상단 글로벌 헤더 -->
-    <header class="flex items-center justify-between mb-8 pb-4 border-b border-pwc-border/60">
-      <div class="flex items-center gap-2 cursor-pointer" onclick="goToStep(0)">
-        <div class="w-4 h-4 bg-pwc-orange rounded-sm flex items-center justify-center transform -skew-x-12">
-          <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
-        </div>
-        <span class="text-xl font-bold tracking-tight text-ink">삼일한끼</span>
-      </div>
-      <button onclick="requestAdminAccess()" class="px-3 py-1.5 rounded-full text-xs font-semibold text-muted hover:text-pwc-orange border border-hairline hover:border-pwc-border transition">
-        운영자 콘솔 🔒
+    <header class="flex items-center justify-between mb-6 pb-4 border-b border-pwc-border">
+      <button type="button" class="brand-lockup" onclick="goToStep(0)" aria-label="PwC 삼일한끼 처음 화면으로"><img class="bl-pwc" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMEAAABkCAYAAAA/k1TBAAAHAklEQVR42u2dsW8cRRTGP/sshBBFJPBGiALuqBEV0kU0cI6UKH8A0tkFQQ4VPYUdiSA5LuipzhahsSX6IJDurBSgnESFhOjujgaBnCYlgthH4V35uOzuzc68tzuz9/2kUeKzb2d2Zr55783MzgKEEEIIIYSQZWaFVUCk+ecdvLv6Kj7wtXxrA3xJERBVnt3Cb1jBm96K4CFemv15lU1GRAWwgc98FkAaFAERYwqs40XcC63cFAER4/wmvvE+CD7DI4qAqAXD0wbe972cZ3/ic4qAqNB4DV94bwWe4esXfsHPz33O5iPOwfB7+BBX8MB7oT7EGyvAE1oCIk8AAsBT3E4TAEVA3H3sG/jK+0JO8fvaT/g269cUAXELhtfwse/lPP8DH+X9niIgSxkMMzD22nJj/fyG/wtOZ3/hwerLaPpezjw3iCLwtXPdxHe+z7evnOFR43vcqkud0x3yzccOdMGJIiAyjfF6ANsODHxsioBYEcruy8YP+LR2gw+7nx/BcBC7L5/idh3rf41dsHpC2X3ZMJhpoSUgDIYpAlLYx67JglPIcJ2gymA48N2XtATEnRB2X/6Ne3UWAEVQpY8dyu7LueNJ6A4Rwf6F9QA6xxO2FCGEEEIIIYQQQgghhBBCCCE1RnLFOAKwMffZAMDpgu+04v/Pnlwwif8dsolS6+zOTJ2dxPU1LDF/LGjXpRJB0iDbM515lk0Axymf7wC4b5jHGMBh3NhDpUZtAejMCTER477DtXsGf7Nr2KEiAEcpA81sPV0T6pzJgNacqZdWTr5JXU0qEGUlo1A77sRTg9RN+f7I8LtpqTczEkncQ39Bfn1HAZjck+n9mNTbKL4323oxqRPTNIqvV5uOb1s5syLoVlS5RTq9lAjaBfKIhK83smzfqVIaCQxclXb8kWMFdONr9RUqdkeh00uJoF+hCKYFBokdxzaorRB+FOysfcURZpph+neEy1+UohZPQwR9g0Gu7zD4tBXKVFsRaKeRhyKYeiCCkeC1kut1Ba7T9rHDh/5kWctwBqYseh7VS5YAHhe81hjAWxmzfEXpUAQ6dOZGmJN42vEAF+sUg5LK0cbl/L2vcZ6tACTbKmhs3Ix+bEbbM2Y/CVy78cjpGnxPDUfgKE5a7pBt/KPhDvUsp1jnk2SZvI0LtE+gm6SY0dM4DePfRbhYOLujPMJornB2kb2IVQUnKW5aq+A1drEk+OAOncYV7lLprYqDrj3P2vV4zgLaDDAHFEH5Qth3FEJV/qbNKKvJ5tzPR5YC0LCcE4pAd/SpQgS+BcODFPfTxk07VHSPKQIDi2ArhCren+WbG3Q3JVaxYVxSrEIRCAdkZbskvgXDu3h+5+a2w2BkIpQiYjlADXaW2kyR2i4e2U43miA1pZc15Vh0KlJiirQvcK82G/BMNt95v5vU15d02PqOEcp52CMrGB7HLslRiXU1BnA9QzjadZ9MaOzj/w9IJQQx8tdNBGWQN+W4pRSb5AX9W8Ixkm3dnyLQp81WKYLCHJXs87aR/RTerkKeEywZFIFcMKyxwpq332eA/Ec/bS1BkyIIG21znDUluqmUd15ssanUmSkCkslORjCctkAllV+W1TF5oH7CJgtbBDaj0VixPFGOX3635DhgAN1ZF1qCgNFcjSwzGF4UB1xXjquq3oxIEcR0PBJBXjD8iWdxgJQ71KEIwhTBsVJZ9nL8ct/iACn3cBsks4HK2DbRVs5H+wF829Mm8u7bdtuBy2kfS+MS+WgJbEahw5LLKB0Mu6wHaLmIeyCVWQLt51ZdrcCiUdnGEmSN2CMBcbkenkZKFkEP+mZb+pwjVxH0lF2SnuP9SrlFbQR8JGNZIijr9ALpE+9cRaDtk0cCwu865t9H8QOIl04Ebejue5cQgangJEQgvf++V0GZoox8KQIhAbiMlLadICpJBBpn80gdijyK23T2LKnZZHIQMkUg1DAuroL2KNiFbsxRlVsklbwTgfZDNc25DtuMU9abbRYh+TaWInnul5TXluK1T+O6ewxSqiWQTFJugrbVsbUEZS1OVW0RvLMEIWygGwC4CvONY9J5D2uUT2IRrkJ3122aNd2N8w36hX9lWoLkhAKNUUN71CpqCao6pDYqoU1r9d4yTRGM4tTH5VtQNNGepuwiLPdAWgyjktpRjJWCIrhf8PrJewKyzHIVmC78HDt0KtNDuQbwxz1IxLgRT1w0DSYvxrh8bSugd4Zp0JaAe0/CJ0pJtWKNbUwMAulawwftydJDERCKgFVAKAJCKAJCKAJCKAJCKAJCKAJClpeGwd9EAN6G3YMwVwD8C+BXVjXxlawNdF1cbKDqQO4NjWNcbLQ6wcWmqyGrn/jKKwjnKTFCGBMQQhEQ4kjWVupryvmOWfWEEEIIIYQQQnzgP1v75+0D/2vlAAAAAElFTkSuQmCC" alt="" width="54" height="28"><span class="brand-logo bl-word" aria-hidden="true"><span class="bl-ch dark" style="--d:.45s">삼</span><span class="bl-ch dark" style="--d:.53s">일</span><span class="bl-ch hot" style="--d:.61s">한</span><span class="bl-ch hot" style="--d:.69s">끼</span></span></button>
+      <button onclick="requestAdminAccess()" class="px-3 py-1.5 rounded-full text-xs font-semibold text-muted hover:text-ink border border-pwc-border transition">
+        운영자 콘솔
       </button>
     </header>
 
     <!-- 진행 인디케이터 (1~5단계) -->
     <div id="surveyProgressContainer" class="mb-6">
-      <div class="flex gap-2 mb-2.5">
-        <div class="prog-segment h-1.5 flex-1 rounded-full bg-pwc-orange transition-all duration-300"></div>
-        <div class="prog-segment h-1.5 flex-1 rounded-full bg-hairline transition-all duration-300"></div>
-        <div class="prog-segment h-1.5 flex-1 rounded-full bg-hairline transition-all duration-300"></div>
-        <div class="prog-segment h-1.5 flex-1 rounded-full bg-hairline transition-all duration-300"></div>
-        <div class="prog-segment h-1.5 flex-1 rounded-full bg-hairline transition-all duration-300"></div>
+      <div class="flex gap-1 mb-2.5">
+        <div class="prog-segment h-[3px] flex-1 rounded-full bg-pwc-orange transition-all duration-300"></div>
+        <div class="prog-segment h-[3px] flex-1 rounded-full bg-hairline transition-all duration-300"></div>
       </div>
       <div class="flex items-center justify-between">
-        <p id="stepIndicatorLabel" class="apple-fine-print font-semibold text-muted">1 / 5단계 · 기본 정보</p>
-        <button id="returnToStep5Btn" onclick="returnToSummary()" class="hidden text-xs font-semibold text-pwc-orange hover:underline">
-          ← 5단계 요약으로 돌아가기
-        </button>
+        <p id="stepIndicatorLabel" class="apple-fine-print font-semibold text-muted">1 / 2단계 · 기본 정보</p>
       </div>
     </div>
 
     <!-- [시작 페이지] -->
     <section id="step0" class="step-card hidden">
-      <div class="rounded-3xl overflow-hidden border border-pwc-border shadow-pwc bg-white">
-        <div class="px-6 pt-8 pb-1 text-center space-y-2">
-          <p class="landing-kicker">2026 삼일회계법인 신입 연수 스페셜</p>
-          <h1 class="landing-title">삼일한끼</h1>
-          <p class="text-sm md:text-[15px] text-muted">처음 만난 동기와, 밥 한 끼부터 같이 해요</p>
+      <div class="hk">
+
+        <!-- ① 히어로 -->
+        <div class="hk-hero">
+          <div class="hk-badge">
+            <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+              <path d="M22 4c3 0 5 2 7 5l9 16c3 6-1 13-8 13H14C7 38 3 31 6 25l9-16c2-3 4-5 7-5z" fill="#FFFFFF" stroke="#3B2418" stroke-width="2.5"/>
+              <rect x="13" y="27" width="18" height="11" rx="2" fill="#3B2418"/>
+              <circle cx="17.5" cy="21" r="1.8" fill="#3B2418"/><circle cx="26.5" cy="21" r="1.8" fill="#3B2418"/>
+              <path d="M20 23.5q2 2 4 0" fill="none" stroke="#3B2418" stroke-width="1.6" stroke-linecap="round"/>
+              <ellipse cx="14.5" cy="24" rx="2.2" ry="1.2" fill="#F7A9A8"/><ellipse cx="29.5" cy="24" rx="2.2" ry="1.2" fill="#F7A9A8"/>
+            </svg>
+            <span class="hk-pill">삼일회계법인 연수 네트워킹 프로젝트</span>
+          </div>
+          <h1 class="hk-title hk-display">오늘 점심,<br><span>누구랑 먹지?</span></h1>
+          <p class="hk-lead">감사 · 택스 · 딜 · AX, 부서 상관없이<br>한 끼 메이트를 매칭해 드려요.<br>밥 한 끼로 시작하는 새로운 인연!</p>
+          <button type="button" class="hk-cta hk-display" onclick="goToStep(1)" aria-label="한끼 매칭 시작하기"><span aria-hidden="true"><span class="cta-ch hot" style="--d:0.30s">한</span><span class="cta-ch hot" style="--d:0.35s">끼</span><span class="cta-ch" style="--d:0.40s"> </span><span class="cta-ch" style="--d:0.45s">매</span><span class="cta-ch" style="--d:0.50s">칭</span><span class="cta-ch" style="--d:0.55s"> </span><span class="cta-ch" style="--d:0.60s">시</span><span class="cta-ch" style="--d:0.65s">작</span><span class="cta-ch" style="--d:0.70s">하</span><span class="cta-ch" style="--d:0.75s">기</span></span></button>
+          <button type="button" class="hk-link" onclick="goToStep(7)">이미 신청했어요 · 내 결과 확인하기</button>
+          <p class="waiting-pill" data-waiting-wrap hidden><span class="waiting-dot" aria-hidden="true"></span><span data-waiting-count></span></p>
         </div>
 
-        <!-- 직접 그린 일러스트: 감나무 아래 점심상에서 삼일회계법인 명함을 주고받는 두 신입 -->
-        <svg viewBox="0 0 640 400" class="w-full h-auto block" role="img" aria-label="감나무 아래 점심상에서 두 사람이 삼일회계법인 명함을 주고받는 일러스트">
-          <defs>
-            <linearGradient id="lgSky" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E4F1F2"/>
-            </linearGradient>
-          </defs>
-          <rect width="640" height="400" fill="url(#lgSky)"/>
-          <circle cx="560" cy="62" r="30" fill="#FFE6DC"/>
-          <!-- 도심 빌딩 -->
-          <g fill="#E6DDD6">
-            <rect x="300" y="70" width="110" height="210" rx="4"/>
-            <rect x="420" y="120" width="66" height="160" rx="3"/>
-            <rect x="228" y="130" width="62" height="150" rx="3"/>
-            <rect x="500" y="150" width="56" height="130" rx="3"/>
-          </g>
-          <g fill="#F2ECE7">
-            <rect x="314" y="90" width="18" height="8"/><rect x="346" y="90" width="18" height="8"/><rect x="378" y="90" width="18" height="8"/>
-            <rect x="314" y="110" width="18" height="8"/><rect x="346" y="110" width="18" height="8"/><rect x="378" y="110" width="18" height="8"/>
-            <rect x="432" y="138" width="16" height="7"/><rect x="458" y="138" width="16" height="7"/>
-            <rect x="512" y="168" width="12" height="7"/><rect x="532" y="168" width="12" height="7"/>
-          </g>
-          <!-- 언덕 -->
-          <path d="M0 255 C110 205 210 240 320 228 C430 216 520 200 640 238 L640 400 L0 400 Z" fill="#A9C79A"/>
-          <path d="M0 300 C140 270 260 292 380 280 C480 270 560 275 640 290 L640 400 L0 400 Z" fill="#8DB57E"/>
-          <rect y="335" width="640" height="65" fill="#EADBC4"/>
-          <!-- 감나무 -->
-          <path d="M80 340 C85 285 77 235 95 180 M91 235 C112 216 130 202 156 196 M89 210 C68 196 52 178 40 158" stroke="#7A5634" stroke-width="10" fill="none" stroke-linecap="round"/>
-          <g fill="#6E9A55">
-            <circle cx="95" cy="155" r="44"/><circle cx="48" cy="146" r="32"/><circle cx="150" cy="176" r="32"/><circle cx="124" cy="120" r="30"/><circle cx="66" cy="110" r="26"/>
-          </g>
-          <g fill="#5C8746"><circle cx="112" cy="166" r="20"/><circle cx="58" cy="156" r="15"/></g>
-          <g>
-            <circle cx="78" cy="166" r="9" fill="#F04E23"/><circle cx="134" cy="146" r="9" fill="#EB8C00"/>
-            <circle cx="162" cy="190" r="8" fill="#F04E23"/><circle cx="44" cy="130" r="8" fill="#EB8C00"/>
-            <circle cx="106" cy="104" r="8" fill="#F04E23"/>
-          </g>
-
-          <!-- 왼쪽 사람: 네이비 정장 (단순한 얼굴 스타일) -->
-          <g transform="rotate(3 240 300)">
-            <path d="M192 300 C192 252 196 225 209 214 C218 207 229 204 240 204 C251 204 262 207 271 214 C284 225 288 252 288 300 Z" fill="#2B3954"/>
-            <path d="M233 184 L247 184 L247 206 L233 206 Z" fill="#E9BE9C"/>
-            <path d="M227 204 L240 242 L253 204 Z" fill="#FFFFFF"/>
-            <path d="M227 204 L233 215 L240 208 Z M253 204 L247 215 L240 208 Z" fill="#F4F4F4" stroke="#DADADA" stroke-width=".8"/>
-            <path d="M236.5 209 L243.5 209 L242.3 215 L237.7 215 Z" fill="#C93A14"/>
-            <path d="M237.7 215 L242.3 215 L245 238 L240 245 L235 238 Z" fill="#F04E23"/>
-            <path d="M227 204 L218 215 L229 226 L223 232 L240 266 L240 246 Z" fill="#22304A"/>
-            <path d="M253 204 L262 215 L251 226 L257 232 L240 266 L240 246 Z" fill="#22304A"/>
-            <circle cx="240" cy="278" r="2" fill="#18223A"/><circle cx="240" cy="291" r="2" fill="#18223A"/>
-            <circle cx="217" cy="168" r="5.5" fill="#F0C4A0"/><circle cx="263" cy="168" r="5.5" fill="#F0C4A0"/>
-            <circle cx="240" cy="168" r="23" fill="#F6D2B3"/>
-            <path d="M215 167 C211 143 226 133 243 133 C261 133 271 146 266 166 C263 157 256 152 248 150 C239 155 226 154 218 160 Z" fill="#2A211C"/>
-            <path d="M229 171 q3 -3.5 6 0 M245 171 q3 -3.5 6 0" stroke="#4A3428" stroke-width="2" fill="none" stroke-linecap="round"/>
-            <circle cx="226" cy="179" r="3.2" fill="#F5A88E" opacity=".55"/><circle cx="254" cy="179" r="3.2" fill="#F5A88E" opacity=".55"/>
-            <path d="M206 227 C198 258 222 270 262 266" stroke="#22304A" stroke-width="17" fill="none" stroke-linecap="round"/>
-            <path d="M276 219 C292 230 300 243 306 254" stroke="#2B3954" stroke-width="17" fill="none" stroke-linecap="round"/>
-            <path d="M262 266 L270 265.5" stroke="#FFFFFF" stroke-width="14"/>
-            <path d="M305 252 L310 261" stroke="#FFFFFF" stroke-width="14"/>
-          </g>
-          <!-- 오른쪽 사람: 어깨 길이 머리, 차콜 정장 (단순한 얼굴 스타일) -->
-          <g transform="rotate(-3 400 300)">
-            <path d="M374 172 C371 147 385 137 400 137 C415 137 429 147 426 172 L429 203 C429 209 422 211 417 206 L383 206 C378 211 371 209 371 203 Z" fill="#3A2A22"/>
-            <path d="M352 300 C352 252 356 225 369 214 C378 207 389 204 400 204 C411 204 422 207 431 214 C444 225 448 252 448 300 Z" fill="#3F4450"/>
-            <path d="M393 184 L407 184 L407 206 L393 206 Z" fill="#E9BE9C"/>
-            <path d="M387 204 Q400 222 413 204 L413 250 L387 250 Z" fill="#FFFFFF"/>
-            <path d="M387 204 L378 215 L389 226 L383 232 L400 270 L392 226 Z" fill="#353A45"/>
-            <path d="M413 204 L422 215 L411 226 L417 232 L400 270 L408 226 Z" fill="#353A45"/>
-            <circle cx="400" cy="282" r="2" fill="#2A2E37"/>
-            <circle cx="400" cy="168" r="23" fill="#F6D2B3"/>
-            <path d="M377 167 C375 149 387 140 401 140 C415 140 425 149 424 166 C419 154 410 149 403 149 C395 155 386 161 377 167 Z" fill="#3A2A22"/>
-            <path d="M378 160 C375 174 376 190 380 203 L385 202 C382 190 381 174 382 162 Z" fill="#3A2A22"/>
-            <path d="M422 160 C425 174 424 190 420 203 L415 202 C418 190 419 174 418 162 Z" fill="#3A2A22"/>
-            <path d="M389 171 q3 -3.5 6 0 M405 171 q3 -3.5 6 0" stroke="#4A3428" stroke-width="2" fill="none" stroke-linecap="round"/>
-            <circle cx="386" cy="179" r="3.2" fill="#F5A88E" opacity=".55"/><circle cx="414" cy="179" r="3.2" fill="#F5A88E" opacity=".55"/>
-            <path d="M434 227 C442 258 418 270 378 266" stroke="#353A45" stroke-width="17" fill="none" stroke-linecap="round"/>
-            <path d="M364 219 C348 230 340 243 334 254" stroke="#3F4450" stroke-width="17" fill="none" stroke-linecap="round"/>
-            <path d="M378 266 L370 265.5" stroke="#FFFFFF" stroke-width="14"/>
-            <path d="M335 252 L330 261" stroke="#FFFFFF" stroke-width="14"/>
-          </g>
-          <!-- 두 손으로 주고받는 명함 -->
-          <g transform="rotate(-6 297 252)">
-            <rect x="269" y="236" width="56" height="32" rx="3" fill="#FFFFFF" stroke="#E5D7C6"/>
-            <rect x="269" y="236" width="5" height="32" rx="1" fill="#F04E23"/>
-            <text x="279" y="249" font-size="7.5" font-weight="700" fill="#1D1D1F" font-family="Apple SD Gothic Neo, Malgun Gothic, sans-serif">삼일회계법인</text>
-            <rect x="279" y="255" width="30" height="2.5" rx="1" fill="#D9D3CE"/><rect x="279" y="260" width="20" height="2.5" rx="1" fill="#D9D3CE"/>
-          </g>
-          <g transform="rotate(6 355 248)">
-            <rect x="327" y="232" width="56" height="32" rx="3" fill="#FFFFFF" stroke="#E5D7C6"/>
-            <rect x="327" y="232" width="5" height="32" rx="1" fill="#F04E23"/>
-            <text x="337" y="245" font-size="7.5" font-weight="700" fill="#1D1D1F" font-family="Apple SD Gothic Neo, Malgun Gothic, sans-serif">삼일회계법인</text>
-            <rect x="337" y="251" width="30" height="2.5" rx="1" fill="#D9D3CE"/><rect x="337" y="256" width="20" height="2.5" rx="1" fill="#D9D3CE"/>
-          </g>
-          <g fill="#F6D2B3">
-            <ellipse cx="275" cy="267" rx="8" ry="6.5"/><ellipse cx="320" cy="263" rx="8" ry="6.5"/>
-            <ellipse cx="331" cy="261" rx="8" ry="6.5"/><ellipse cx="380" cy="265" rx="8" ry="6.5"/>
-            <ellipse cx="279" cy="259" rx="3" ry="5" transform="rotate(-20 279 259)"/><ellipse cx="316" cy="255" rx="3" ry="5" transform="rotate(20 316 255)"/>
-            <ellipse cx="335" cy="253" rx="3" ry="5" transform="rotate(-20 335 253)"/><ellipse cx="376" cy="257" rx="3" ry="5" transform="rotate(20 376 257)"/>
-          </g>
-
-          <!-- 평상 -->
-          <path d="M150 300 L520 300 L560 340 L110 340 Z" fill="#D2A36B"/>
-          <rect x="110" y="340" width="450" height="12" fill="#A9783F"/>
-          <rect x="128" y="352" width="12" height="34" fill="#8C6233"/><rect x="530" y="352" width="12" height="34" fill="#8C6233"/>
-          <g stroke="#C08F57" stroke-width="2"><line x1="200" y1="300" x2="180" y2="340"/><line x1="300" y1="300" x2="290" y2="340"/><line x1="400" y1="300" x2="400" y2="340"/><line x1="480" y1="300" x2="500" y2="340"/></g>
-          <!-- 노란 양은 주전자 -->
-          <g>
-            <path d="M150 312 Q148 288 172 286 Q196 288 194 312 Z" fill="#F2C14E"/>
-            <ellipse cx="172" cy="286" rx="14" ry="4" fill="#E0AC35"/><circle cx="172" cy="281" r="3.5" fill="#E0AC35"/>
-            <path d="M193 300 L210 288" stroke="#F2C14E" stroke-width="6" stroke-linecap="round"/>
-            <path d="M158 288 Q172 268 186 288" stroke="#B88A2A" stroke-width="2.5" fill="none"/>
-          </g>
-          <!-- 계란말이 접시 -->
-          <ellipse cx="236" cy="322" rx="28" ry="8" fill="#FFFFFF" stroke="#E5D7C6"/>
-          <g fill="#F7D35C" stroke="#E8B93A" stroke-width="1.2"><rect x="216" y="312" width="12" height="9" rx="2"/><rect x="230" y="312" width="12" height="9" rx="2"/><rect x="244" y="312" width="12" height="9" rx="2"/></g>
-          <!-- 밥그릇 두 개 -->
-          <path d="M290 314 C292 332 334 332 336 314 Z" fill="#FFFFFF" stroke="#E5D7C6"/><ellipse cx="313" cy="313" rx="23" ry="6.5" fill="#FFFDF8"/>
-          <path d="M352 314 C354 332 396 332 398 314 Z" fill="#FFFFFF" stroke="#E5D7C6"/><ellipse cx="375" cy="313" rx="23" ry="6.5" fill="#FFFDF8"/>
-          <g stroke="#8C8C90" stroke-width="3" stroke-linecap="round"><line x1="340" y1="334" x2="348" y2="306"/><line x1="345" y1="335" x2="353" y2="307"/></g>
-          <!-- 생선구이 -->
-          <ellipse cx="420" cy="326" rx="30" ry="8" fill="#FFFFFF" stroke="#E5D7C6"/>
-          <path d="M398 322 Q414 312 432 322 Q414 330 398 322 Z M432 322 L442 315 L442 329 Z" fill="#C98A4B"/>
-          <!-- 가마솥 + 김 -->
-          <path class="steam" d="M478 254 C470 242 486 234 478 220" stroke="#FFFFFF" stroke-width="5" fill="none" stroke-linecap="round"/>
-          <path class="steam s2" d="M494 250 C486 236 502 228 494 212" stroke="#FFFFFF" stroke-width="5" fill="none" stroke-linecap="round"/>
-          <path class="steam s3" d="M510 254 C502 242 518 234 510 220" stroke="#FFFFFF" stroke-width="5" fill="none" stroke-linecap="round"/>
-          <ellipse cx="494" cy="276" rx="44" ry="9" fill="#3A3A3C"/>
-          <path d="M454 276 C456 304 532 304 534 276 Z" fill="#4A4A4D"/>
-          <ellipse cx="494" cy="267" rx="34" ry="7" fill="#5B5B5F"/>
-          <rect x="487" y="256" width="14" height="9" rx="3" fill="#3A3A3C"/>
-          <!-- 바닥: 감 바구니와 낙엽 -->
-          <path d="M578 360 L620 360 L612 386 L586 386 Z" fill="#B98B52"/>
-          <g><circle cx="588" cy="355" r="8" fill="#F04E23"/><circle cx="602" cy="352" r="8" fill="#EB8C00"/><circle cx="614" cy="356" r="7" fill="#F04E23"/></g>
-          <g fill="#D9772F" opacity=".8"><ellipse cx="40" cy="372" rx="8" ry="4" transform="rotate(-20 40 372)"/><ellipse cx="200" cy="384" rx="7" ry="3.5" transform="rotate(25 200 384)"/><ellipse cx="455" cy="378" rx="7" ry="3.5" transform="rotate(-15 455 378)"/></g>
-        </svg>
-
-        <div class="px-6 pb-8 pt-5 space-y-4">
-          <button onclick="goToStep(1)" class="apple-press landing-cta w-full py-5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white shadow-sm transition">점심 한끼 함께해요!</button>
-          <button onclick="goToStep(7)" class="apple-press w-full py-3.5 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption-strong transition">내 결과 확인하기</button>
-          <p id="landingNote" class="text-center apple-fine-print text-muted">신청은 2분이면 끝나요.</p>
+        <!-- ② 슬롯머신 -->
+        <div class="hk-machine-wrap hk-reveal">
+          <div class="hk-machine" id="slotMachine">
+            <div class="hk-antenna" aria-hidden="true">
+              <svg viewBox="0 0 30 28"><path d="M15 26S2 18 2 9.5C2 5 5.5 2 9.3 2c2.5 0 4.6 1.3 5.7 3.3C16.1 3.3 18.2 2 20.7 2 24.5 2 28 5 28 9.5 28 18 15 26 15 26z" fill="#F07C8C" stroke="#3B2418" stroke-width="2.5" stroke-linejoin="round"/></svg>
+              <i></i>
+            </div>
+            <svg class="hk-sparkle" viewBox="0 0 34 40" aria-hidden="true" fill="none" stroke="#3B2418" stroke-width="2.5" stroke-linecap="round">
+              <path d="M6 4l6 12M2 10l6 12"/><path d="M26 18v12M20 24h12" stroke-width="2.2"/>
+            </svg>
+            <div class="hk-cab">
+              <div class="hk-sign">
+                <div class="hk-bulbs" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <p class="hk-sign-text hk-display" id="slotSign">오늘의 한끼 테이블</p>
+              </div>
+              <div class="hk-face" aria-hidden="true">
+                <span class="hk-blush l"></span><span class="hk-eye l"></span>
+                <svg class="hk-mouth" viewBox="0 0 26 12"><path d="M2 3q5.5 7 11 0q5.5 7 11 0" fill="none" stroke="#3B2418" stroke-width="2.5" stroke-linecap="round"/></svg>
+                <span class="hk-eye r"></span><span class="hk-blush r"></span>
+              </div>
+              <div class="hk-reels" aria-hidden="true">
+                <div class="hk-window"><div class="hk-strip"></div></div>
+                <div class="hk-window"><div class="hk-strip"></div></div>
+                <div class="hk-window"><div class="hk-strip"></div></div>
+                <div class="hk-window"><div class="hk-strip"></div></div>
+              </div>
+              <p class="hk-caption" id="slotResult" aria-live="polite">레버를 당겨 한끼 테이블을 차려보세요!</p>
+              <button type="button" class="hk-spin hk-display" id="slotSpinBtn">돌려돌려 한끼!</button>
+            </div>
+            <span class="hk-bubble" aria-hidden="true">당겨봐!</span>
+            <button type="button" class="hk-lever" id="slotLever" aria-label="레버를 당겨 슬롯 돌리기">
+              <span class="hk-lever-base"></span>
+              <span class="hk-lever-arm"><span class="hk-lever-knob"></span></span>
+            </button>
+            <div class="hk-feet" aria-hidden="true"><i></i><i></i></div>
+          </div>
         </div>
+
+        <!-- ③ 진행 순서 -->
+        <div class="hk-reveal">
+          <p class="hk-section-label">이렇게 진행돼요</p>
+          <ol class="hk-steps hk-display">
+            <li><b>1</b>참여 신청</li>
+            <li class="arrow" aria-hidden="true">→</li>
+            <li><b>2</b>자동 매칭</li>
+            <li class="arrow" aria-hidden="true">→</li>
+            <li><b>3</b>맛있는 한 끼!</li>
+          </ol>
+        </div>
+
+        <!-- ④ 마무리 -->
+        <div class="hk-end hk-reveal">
+          <h2 class="hk-display">오늘 점심 약속,<br>지금 잡아볼까요?</h2>
+          <button type="button" class="hk-cta hk-display" onclick="goToStep(1)" aria-label="한끼 매칭 시작하기"><span aria-hidden="true"><span class="cta-ch hot" style="--d:0.30s">한</span><span class="cta-ch hot" style="--d:0.35s">끼</span><span class="cta-ch" style="--d:0.40s"> </span><span class="cta-ch" style="--d:0.45s">매</span><span class="cta-ch" style="--d:0.50s">칭</span><span class="cta-ch" style="--d:0.55s"> </span><span class="cta-ch" style="--d:0.60s">시</span><span class="cta-ch" style="--d:0.65s">작</span><span class="cta-ch" style="--d:0.70s">하</span><span class="cta-ch" style="--d:0.75s">기</span></span></button>
+          <button type="button" class="hk-link" onclick="goToStep(7)">내 결과 확인하기</button>
+          <p id="landingNote">신청은 2분이면 끝나요.</p>
+          <button type="button" class="hk-admin" onclick="requestAdminAccess()">운영자 콘솔</button>
+        </div>
+
       </div>
     </section>
 
     <!-- [1단계] 기본 정보 -->
     <section id="step1" class="step-card space-y-6">
-      <div class="space-y-2">
+      <div class="space-y-2.5">
         <h1 class="apple-display-lg text-ink">처음 만나는 동료와<br><span class="text-pwc-orange">편하게 점심 한 끼</span></h1>
-        <p class="text-sm md:text-[15px] text-muted">일정과 관심사가 맞는 동료를 묶어 드립니다. 질문은 5단계, 2분이면 끝나요.</p>
+        <p class="text-sm md:text-[15px] leading-relaxed text-muted">MBTI·성별·부문을 보고 잘 맞는 동료를 묶어 드려요.<br>질문은 2단계, 1분이면 끝나요.</p>
       </div>
 
-      <div class="p-4 md:p-5 bg-pwc-soft/80 border border-pwc-border rounded-2xl relative overflow-hidden">
-        <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-pwc-orange"></div>
-        <h3 class="apple-caption-strong text-ink mb-1.5">정보는 이렇게 사용됩니다.</h3>
-        <ul class="apple-caption text-ink space-y-1">
-          <li>• <span class="font-semibold">조원에게 공유:</span> 이름, 이메일, 관심사, 요즘 빠져 있는 것</li>
-          <li>• <span class="font-semibold">매칭에만 사용(공유 안 함):</span> 출생연도, 성별, 나이·구성 선호, 예산</li>
-          <li>• 소속 부문은 아래에서 공개 여부를 직접 고를 수 있어요.</li>
+      <div class="p-5 bg-white/60 rounded-[24px]">
+        <h3 class="apple-caption-strong text-ink mb-1.5">정보는 이렇게 사용됩니다</h3>
+        <ul class="apple-caption text-ink space-y-1 leading-relaxed">
+          <li>• <span class="font-semibold">조원에게 공유:</span> 이름(가운데 글자는 가려서 최*주처럼), 이메일, 출생연도, 성별, 소속 부문, MBTI</li>
+          <li>• <span class="font-semibold">매칭에만 사용:</span> 원하는 조원 성별·부문, 희망 인원, 가능한 시간</li>
         </ul>
       </div>
 
-      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-5">
-        <div>
+      <div class="tone-card space-y-6">
+        <div class="seq-field" data-seq="0">
           <label for="inputName" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
             이름 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
           </label>
-          <input type="text" id="inputName" placeholder="예: 홍길동" autocomplete="name" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+          <input type="text" id="inputName" placeholder="예: 홍길동" autocomplete="name" class="w-full px-4 py-3 bg-white border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+          <div class="seq-field seq-hidden" data-seq="1">
             <label for="selectBirthYear" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
-              출생연도 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-muted rounded-md border border-pwc-border">선택</span>
+              출생연도 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
             </label>
-            <select id="selectBirthYear" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl apple-caption text-ink focus:outline-none focus:border-pwc-orange transition cursor-pointer">
-              <option value="">선택 안 함</option>
+            <select id="selectBirthYear" class="w-full px-4 py-3 bg-white border border-pwc-border rounded-xl apple-caption text-ink focus:outline-none focus:border-pwc-orange transition cursor-pointer">
+              <option value="">선택해 주세요</option>
             </select>
           </div>
-          <div>
+          <div class="seq-field seq-hidden" data-seq="2">
             <label for="selectGender" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
-              성별 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-muted rounded-md border border-pwc-border">선택</span>
+              성별 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
             </label>
-            <select id="selectGender" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl apple-caption text-ink focus:outline-none focus:border-pwc-orange transition cursor-pointer">
-              <option>응답 안 함</option>
+            <select id="selectGender" class="w-full px-4 py-3 bg-white border border-pwc-border rounded-xl apple-caption text-ink focus:outline-none focus:border-pwc-orange transition cursor-pointer">
+              <option value="">선택해 주세요</option>
               <option>남성</option>
               <option>여성</option>
             </select>
           </div>
         </div>
 
-        <div>
+        <div class="seq-field seq-hidden" data-seq="3">
           <label for="inputEmail" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">
             이메일 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
           </label>
           <p class="apple-fine-print text-muted mb-2">매칭 결과를 확인할 때 쓰는 이메일 주소 (@ 앞부분 입력 후 도메인 선택)</p>
-          <div id="emailBox" class="flex items-center w-full bg-pwc-canvas/60 border border-pwc-border rounded-xl focus-within:border-pwc-orange focus-within:bg-white transition overflow-hidden">
+          <div id="emailBox" class="flex items-center w-full bg-white border border-pwc-border rounded-xl focus-within:border-pwc-orange focus-within:bg-white transition overflow-hidden">
             <input type="text" id="inputEmail" placeholder="gildong.hong" autocomplete="off" autocapitalize="off" spellcheck="false" class="flex-1 min-w-0 px-4 py-3 bg-transparent text-ink text-sm focus:outline-none">
             <span class="pl-1 py-3 text-muted text-sm font-medium select-none">@</span>
             <select id="selectEmailDomain" aria-label="이메일 도메인" class="pr-3 pl-1 py-3 bg-transparent text-ink text-sm font-medium focus:outline-none cursor-pointer"></select>
           </div>
         </div>
 
-        <div>
+        <div class="seq-field seq-hidden" data-seq="4">
           <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
             소속 부문·본부 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
           </label>
@@ -825,21 +959,75 @@
           </div>
         </div>
 
-        <label class="flex items-center gap-2.5 pt-2 cursor-pointer select-none">
-          <input type="checkbox" id="checkDeptOpen" class="custom-checkbox">
-          <span class="apple-caption text-ink">조원에게 내 소속 부문을 공개해도 괜찮아요</span>
+        <div class="seq-field seq-hidden" data-seq="5">
+          <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">MBTI <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span></label>
+          <div class="grid grid-cols-4 gap-2">
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ISTJ">ISTJ</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ISFJ">ISFJ</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="INFJ">INFJ</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="INTJ">INTJ</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ISTP">ISTP</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ISFP">ISFP</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="INFP">INFP</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="INTP">INTP</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ESTP">ESTP</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ESFP">ESFP</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ENFP">ENFP</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ENTP">ENTP</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ESTJ">ESTJ</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ESFJ">ESFJ</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ENFJ">ENFJ</button>
+            <button type="button" class="apple-press mbti-btn px-0 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="ENTJ">ENTJ</button>
+          </div>
+        </div>
+
+        <div class="seq-field seq-hidden" data-seq="6">
+          <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">원하는 조원 성별 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span></label>
+          <p class="apple-fine-print text-muted mb-2">여러 개 고를 수 있어요</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="apple-press want-gender-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="남성">남성</button>
+            <button type="button" class="apple-press want-gender-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="여성">여성</button>
+            <button type="button" class="apple-press want-gender-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="상관없음">상관없음</button>
+          </div>
+        </div>
+
+        <div class="seq-field seq-hidden" data-seq="7">
+          <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">원하는 조원 부문 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span></label>
+          <p class="apple-fine-print text-muted mb-2">여러 개 고를 수 있어요</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="Audit">Audit</button>
+            <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="Tax">Tax</button>
+            <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="Deal">Deal</button>
+            <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="AX">AX</button>
+            <button type="button" class="apple-press want-dept-btn px-4 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="상관없음">상관없음</button>
+          </div>
+        </div>
+
+        <div class="seq-field seq-hidden" data-seq="8">
+          <label class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">희망 인원 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span></label>
+          <p class="apple-fine-print text-muted mb-2">원하는 규모를 모두 골라 주세요</p>
+          <div class="flex gap-2">
+            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="2명">2명</button>
+            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="3~4명">3~4명</button>
+            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="5명~">5명~</button>
+          </div>
+        </div>
+
+        <label class="seq-field seq-hidden flex items-start gap-2.5 pt-3 border-t border-pwc-border cursor-pointer select-none" data-seq="9">
+          <input type="checkbox" id="checkFinalConsent" class="custom-checkbox mt-1">
+          <span class="apple-caption text-ink leading-relaxed">입력하신 정보는 매칭에 사용되며, 조원에게 공유되는 것에 동의합니다.</span>
         </label>
       </div>
 
       <div class="flex items-center justify-between pt-4">
-        <button disabled class="px-6 py-3 rounded-full apple-caption font-semibold text-muted/40 cursor-not-allowed bg-transparent">이전</button>
-        <button onclick="handleNextStep(1)" class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">다음</button>
+        <button disabled class="px-7 py-3.5 rounded-full hk-btn-sub text-muted/40 cursor-not-allowed bg-transparent">이전</button>
+        <button onclick="handleNextStep(1)" class="apple-press px-9 py-3.5 rounded-full bg-ink hover:bg-[#24150D] text-white hk-btn apple-caption-strong transition">다음</button>
       </div>
     </section>
 
     <!-- [2단계] 일정 선택 -->
     <section id="step2" class="step-card space-y-6 hidden">
-      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-6">
+      <div class="tone-card space-y-6">
         <div>
           <div class="flex items-center justify-between mb-1 gap-2">
             <label class="flex items-center gap-1.5 apple-caption-strong text-ink">
@@ -848,11 +1036,10 @@
             </label>
             <span id="selectedSlotsCount" class="text-xs font-semibold text-pwc-orange whitespace-nowrap">0개 슬롯 선택됨</span>
           </div>
-          <p class="apple-fine-print text-muted mb-1">PC에서는 마우스를 누른 채 드래그하면 여러 칸을 한 번에, 휴대폰에서는 칸을 하나씩 눌러 선택해요.</p>
-          <p class="apple-fine-print text-muted mb-3.5">표시된 시간은 점심 <b class="text-ink">시작 시각</b>이에요. 가능한 시작 시각을 모두 골라 주세요.</p>
+          <div class="mb-3"></div>
 
           <div id="gridScrollContainer" class="overflow-x-auto overflow-y-auto max-h-[400px] no-scrollbar border border-pwc-border rounded-xl bg-pwc-canvas/30 p-2 user-select-none">
-            <div class="min-w-[840px]">
+            <div class="min-w-[480px]">
               <table id="whenTable" class="w-full text-center text-xs border-collapse">
                 <thead class="sticky top-0 bg-pwc-soft z-20">
                   <tr id="whenHeadRow" class="text-muted font-semibold border-b border-pwc-border shadow-sm">
@@ -870,195 +1057,30 @@
       </div>
 
       <div class="flex items-center justify-between pt-4">
-        <button onclick="goToStep(1)" class="apple-press px-6 py-3 rounded-full border border-pwc-border apple-caption font-semibold text-ink bg-white hover:bg-pwc-soft transition">이전</button>
-        <button onclick="handleNextStep(2)" class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">다음</button>
-      </div>
-    </section>
-
-    <!-- [3단계] 음식 취향 및 식사/모임 조건 -->
-    <section id="step3" class="step-card space-y-6 hidden">
-      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-6">
-        <div>
-          <label class="block apple-caption-strong text-ink mb-2">선호 음식 카테고리 (복수 선택 가능)</label>
-          <div class="flex flex-wrap gap-2" id="foodCategoryGroup">
-            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="한식">한식</button>
-            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="일식">일식</button>
-            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="중식">중식</button>
-            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="아시안">아시안</button>
-            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="양식">양식</button>
-            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="분식">분식</button>
-            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="샐러드">샐러드</button>
-            <button type="button" class="food-pill px-3.5 py-2 rounded-full border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="고기">고기</button>
-          </div>
-        </div>
-
-        <div>
-          <label class="block apple-caption-strong text-ink mb-2">매운맛 선호도</label>
-          <div class="flex gap-2" id="spicyGroup">
-            <button type="button" class="spicy-btn flex-1 py-2 rounded-xl border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="약하게">약하게</button>
-            <button type="button" class="spicy-btn flex-1 py-2 rounded-xl border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="보통">보통</button>
-            <button type="button" class="spicy-btn flex-1 py-2 rounded-xl border border-pwc-border text-xs md:text-sm font-medium bg-white hover:border-pwc-orange transition" data-val="맵게">맵게</button>
-          </div>
-        </div>
-
-        <div class="pt-2">
-          <label for="inputAllergy" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
-            못 먹는 음식·알레르기 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-muted rounded-md border border-pwc-border">선택</span>
-          </label>
-          <input type="text" id="inputAllergy" placeholder="예: 갑각류 알레르기, 오이 등" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
-        </div>
-
-        <div>
-          <label class="block apple-caption-strong text-ink mb-2">1인 식사 예산</label>
-          <div class="flex flex-wrap gap-2" id="budgetPillGroup">
-            <button type="button" class="apple-press budget-pill px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="1만원 이하">1만원 이하</button>
-            <button type="button" class="apple-press budget-pill px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="1~1.5만원">1~1.5만원</button>
-            <button type="button" class="apple-press budget-pill px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="1.5만원 이상">1.5만원 이상</button>
-            <button type="button" class="apple-press budget-pill px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="무관">무관</button>
-          </div>
-        </div>
-
-        <div class="pt-2 border-t border-pwc-border/60 mt-4">
-          <div class="flex items-center justify-between mb-1 mt-4 gap-2">
-            <label class="block apple-caption-strong text-ink">희망 인원 (중복 체크 가능)</label>
-            <span class="text-xs text-muted text-right">원하는 규모를 모두 선택하세요</span>
-          </div>
-          <div class="flex gap-2 mt-2" id="groupSizeGroup">
-            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="2명">2명</button>
-            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="3~4명">3~4명</button>
-            <button type="button" class="apple-press group-size-multi-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="5명~">5명~</button>
-          </div>
-        </div>
-
-        <div>
-          <label class="block apple-caption-strong text-ink mb-2">어떤 자리가 편하세요?</label>
-          <div class="flex flex-wrap gap-2" id="vibeGroup">
-            <button type="button" class="apple-press vibe-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="차분하게 대화">차분하게 대화</button>
-            <button type="button" class="apple-press vibe-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="활기차게 대화">활기차게 대화</button>
-            <button type="button" class="apple-press vibe-btn flex-1 py-2.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="둘 다 좋아요">둘 다 좋아요</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex items-center justify-between pt-4">
-        <button onclick="goToStep(2)" class="apple-press px-6 py-3 rounded-full border border-pwc-border apple-caption font-semibold text-ink bg-white hover:bg-pwc-soft transition">이전</button>
-        <button onclick="handleNextStep(3)" class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">다음</button>
-      </div>
-    </section>
-
-    <!-- [4단계] 이야기거리 & 우선 조건 -->
-    <section id="step4" class="step-card space-y-6 hidden">
-      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-6">
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="apple-caption-strong text-ink">
-              관심사 <span id="interestCountBadge" class="text-pwc-orange font-semibold">0/3</span>
-              <span class="ml-1 px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
-            </label>
-          </div>
-          <p class="apple-fine-print text-muted mb-4">최대 3개까지 골라 주세요. 첫 만남 대화 주제로 쓰여요.</p>
-          <div class="space-y-4" id="interestGroups"></div>
-        </div>
-
-        <div>
-          <label for="inputFavoriteThing" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-1">
-            요즘 빠져 있는 것 하나 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-muted rounded-md border border-pwc-border">선택</span>
-          </label>
-          <p class="apple-fine-print text-muted mb-2">'러닝'보다 '주말 한강 러닝 10km'처럼 구체적일수록 좋아요.</p>
-          <input type="text" id="inputFavoriteThing" placeholder="예: 주말마다 스크린골프, 한강 러닝" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl apple-caption text-ink focus:outline-none focus:border-pwc-orange focus:bg-white transition">
-        </div>
-
-        <div class="pt-4 border-t border-pwc-border/70">
-          <div class="flex items-center justify-between mb-1">
-            <label class="apple-caption-strong text-ink">가장 중요하게 맞췄으면 하는 조건</label>
-            <span id="priorityCountBadge" class="apple-caption-strong text-pwc-orange">0/2</span>
-          </div>
-          <p class="apple-fine-print text-muted mb-3">최대 2개. 조건이 충돌하면 먼저 고른 조건을 우선 반영해요.</p>
-          <div class="flex flex-wrap gap-2" id="priorityGroup">
-            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="다른 부문">다른 부문</button>
-            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="같은 부문">같은 부문</button>
-            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="나이대">나이대</button>
-            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="음식 취향">음식 취향</button>
-            <button type="button" class="apple-press priority-btn px-4 py-2 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="관심사">관심사</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex items-center justify-between pt-4">
-        <button onclick="goToStep(3)" class="apple-press px-6 py-3 rounded-full border border-pwc-border apple-caption font-semibold text-ink bg-white hover:bg-pwc-soft transition">이전</button>
-        <button onclick="handleNextStep(4)" class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">다음</button>
-      </div>
-    </section>
-
-    <!-- [5단계] 확인 및 제출 -->
-    <section id="step5" class="step-card space-y-6 hidden">
-      <div class="bg-white p-6 md:p-7 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-5">
-        <div class="border-b border-pwc-border pb-2.5 mb-1 flex items-center justify-between gap-3">
-          <h2 class="apple-caption-strong text-ink text-base whitespace-nowrap">최종 입력 확인</h2>
-          <span class="text-xs text-muted text-right">[수정]을 누르면 해당 화면으로 이동해요</span>
-        </div>
-
-        <div class="divide-y divide-pwc-border/60 apple-caption">
-          <div class="py-2.5 flex items-center justify-between gap-3">
-            <div class="min-w-0"><span class="text-muted block text-xs">이름 / 출생 / 성별 / 이메일</span><span id="sumNameContact" class="font-semibold text-ink break-all">-</span></div>
-            <button onclick="jumpToEdit(1)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
-          </div>
-          <div class="py-2.5 flex items-center justify-between gap-3">
-            <div class="min-w-0"><span class="text-muted block text-xs">소속 본부</span><span id="sumDept" class="font-semibold text-ink">-</span></div>
-            <button onclick="jumpToEdit(1)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
-          </div>
-          <div class="py-2.5 flex items-center justify-between gap-3">
-            <div class="min-w-0"><span class="text-muted block text-xs">가능 일정 및 시간 슬롯</span><span id="sumSlots" class="font-semibold text-pwc-orange block">-</span></div>
-            <button onclick="jumpToEdit(2)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
-          </div>
-          <div class="py-2.5 flex items-center justify-between gap-3">
-            <div class="min-w-0"><span class="text-muted block text-xs">선호 음식 / 매운맛 / 알레르기 / 예산</span><span id="sumFood" class="font-semibold text-ink">-</span></div>
-            <button onclick="jumpToEdit(3)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
-          </div>
-          <div class="py-2.5 flex items-center justify-between gap-3">
-            <div class="min-w-0"><span class="text-muted block text-xs">희망 인원 / 자리 분위기</span><span id="sumGroupAndVibe" class="font-semibold text-ink">-</span></div>
-            <button onclick="jumpToEdit(3)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
-          </div>
-          <div class="py-2.5 flex items-center justify-between gap-3">
-            <div class="min-w-0"><span class="text-muted block text-xs">관심사 / 요즘 빠진 것</span><span id="sumInterests" class="font-semibold text-ink block">-</span></div>
-            <button onclick="jumpToEdit(4)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
-          </div>
-          <div class="py-2.5 flex items-center justify-between gap-3">
-            <div class="min-w-0"><span class="text-muted block text-xs">우선 매칭 조건</span><span id="sumPriority" class="font-semibold text-pwc-orange">-</span></div>
-            <button onclick="jumpToEdit(4)" class="shrink-0 text-xs font-semibold text-pwc-orange hover:underline px-2.5 py-1 rounded-md bg-pwc-soft border border-pwc-border">수정</button>
-          </div>
-        </div>
-
-        <label class="flex items-start gap-2.5 pt-3 border-t border-pwc-border cursor-pointer select-none">
-          <input type="checkbox" id="checkFinalConsent" class="custom-checkbox mt-1">
-          <span class="apple-caption text-ink leading-relaxed">위 안내대로 정보가 매칭에 쓰이고, 이름·이메일·관심사가 조원에게 공유되는 것에 동의합니다.</span>
-        </label>
-      </div>
-
-      <div class="flex items-center justify-between pt-4">
-        <button onclick="goToStep(4)" class="apple-press px-6 py-3 rounded-full border border-pwc-border apple-caption font-semibold text-ink bg-white hover:bg-pwc-soft transition">이전</button>
-        <button id="submitBtn" onclick="finishApplication()" disabled class="apple-press px-8 py-3 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition disabled:bg-hairline disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed">신청하기</button>
+        <button onclick="goToStep(1)" class="apple-press px-7 py-3.5 rounded-full border border-pwc-border hk-btn-sub text-ink bg-white hover:bg-pwc-soft transition">이전</button>
+        <button id="submitBtn" onclick="finishApplication()" class="apple-press px-9 py-3.5 rounded-full bg-ink hover:bg-[#24150D] text-white hk-btn apple-caption-strong transition disabled:bg-hairline disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed">신청하기</button>
       </div>
     </section>
 
     <!-- [신청 완료 화면] -->
+
     <section id="stepCompleted" class="step-card space-y-6 hidden text-center">
-      <div class="bg-white p-8 md:p-10 rounded-3xl border border-pwc-border/70 shadow-pwc space-y-5">
-        <div class="w-16 h-16 bg-pwc-soft text-pwc-orange rounded-full flex items-center justify-center mx-auto text-3xl">🎉</div>
-        <h2 class="apple-display-lg text-ink text-2xl">신청이 완료되었어요!</h2>
-        <p class="text-sm text-muted leading-relaxed max-w-md mx-auto">
-          매일 <span class="font-semibold text-ink" id="completedTime">22:00</span>에 아직 조가 없는 신청자끼리 자동으로 조를 짜 드려요.<br>
-          결과는 이 웹앱의 <span class="font-semibold text-ink">내 결과 확인</span>에서 볼 수 있어요.
-        </p>
-        <div class="p-5 rounded-2xl bg-pwc-soft border border-pwc-border space-y-1">
-          <div class="apple-fine-print font-semibold text-muted">내 결과 확인 코드</div>
-          <div id="confirmedCode" class="text-4xl font-bold tracking-[0.3em] text-pwc-orange pl-[0.3em]">------</div>
-          <div class="apple-fine-print text-muted"><span id="confirmedEmail" class="break-all">-</span><br>이 기기에서는 자동으로 기억돼요.<br><b class="text-ink">다른 기기에서 볼 때 필요하니 화면을 캡처해 두세요.</b></div>
+      <div class="tone-card done-card">
+        <span class="done-pill hk-display">신청 완료</span>
+        <h2 class="apple-display-lg text-ink">한 끼 신청이 끝났어요!</h2>
+        <div>
+          <div class="apple-fine-print font-semibold text-muted mb-2">내 결과 확인 코드</div>
+          <div id="confirmedCode" class="done-code">------</div>
         </div>
-        <p id="mailStatus" class="hidden apple-fine-print text-muted" role="status"></p>
-        <div class="space-y-2">
-          <button onclick="goToStep(7)" class="apple-press w-full py-3.5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong transition">내 결과 확인하기</button>
-          <button onclick="goHome()" class="w-full py-3 rounded-full bg-white border border-pwc-border hover:bg-pwc-soft text-ink apple-caption font-semibold transition">처음 화면으로</button>
+        <dl class="done-stats">
+          <div class="done-stat"><dt>다음 매칭</dt><dd>매일 <span id="completedTime">22:00</span></dd></div>
+          <div class="done-stat"><dt>결과 확인 이메일</dt><dd id="confirmedEmail">-</dd></div>
+        </dl>
+        <p class="text-sm text-muted leading-relaxed max-w-md">아직 조가 없는 신청자끼리 자동으로 조를 짜 드려요.<br>이 기기에서는 코드가 자동으로 기억되지만,<br><b class="text-ink">다른 기기에서 볼 때 필요하니 화면을 캡처해 두세요.</b></p>
+        <p id="mailStatus" class="hidden apple-fine-print text-muted text-center" role="status"></p>
+        <div class="w-full space-y-2">
+          <button onclick="goToStep(7)" class="apple-press w-full py-3.5 rounded-full bg-ink hover:bg-[#24150D] text-white hk-btn apple-caption-strong transition">내 결과 확인하기</button>
+          <button onclick="goHome()" class="w-full py-3.5 rounded-full bg-white border border-pwc-border hover:bg-pwc-soft text-ink hk-btn-sub transition">처음 화면으로</button>
         </div>
       </div>
     </section>
@@ -1069,16 +1091,16 @@
         <h1 class="apple-display-lg text-ink text-2xl">내 매칭 결과</h1>
         <p class="text-sm text-muted">신청할 때 쓴 이메일과 결과 확인 코드(6자리)를 입력해 주세요.</p>
       </div>
-      <div class="bg-white p-6 rounded-2xl border border-pwc-border/70 shadow-pwc space-y-4">
+      <div class="tone-card space-y-4">
         <div>
           <label for="resultEmail" class="block apple-caption-strong text-ink mb-2">이메일</label>
-          <input id="resultEmail" type="email" placeholder="gildong.hong@naver.com" autocomplete="email" autocapitalize="off" spellcheck="false" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+          <input id="resultEmail" type="email" placeholder="gildong.hong@naver.com" autocomplete="email" autocapitalize="off" spellcheck="false" class="w-full px-4 py-3 bg-white border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
         </div>
         <div>
           <label for="resultCode" class="block apple-caption-strong text-ink mb-2">결과 확인 코드</label>
-          <input id="resultCode" type="text" inputmode="numeric" maxlength="6" placeholder="6자리 숫자" autocomplete="off" class="w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm tracking-widest focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+          <input id="resultCode" type="text" inputmode="numeric" maxlength="6" placeholder="6자리 숫자" autocomplete="off" class="w-full px-4 py-3 bg-white border border-pwc-border rounded-xl text-ink text-sm tracking-widest focus:outline-none focus:border-pwc-orange focus:bg-white transition">
         </div>
-        <button onclick="lookupResult()" class="apple-press w-full py-3.5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong transition">결과 보기</button>
+        <button onclick="lookupResult()" class="apple-press w-full py-3.5 rounded-full bg-ink hover:bg-[#24150D] text-white hk-btn apple-caption-strong transition">결과 보기</button>
       </div>
       <div id="resultBox"></div>
       <div class="text-center">
@@ -1124,11 +1146,11 @@
           </label>
           <label class="flex items-center gap-2">
             <span class="apple-caption text-muted">실행 시각</span>
-            <input type="time" id="setTime" class="px-3 py-2 bg-pwc-canvas/60 border border-pwc-border rounded-lg text-sm text-ink focus:outline-none focus:border-pwc-orange">
+            <input type="time" id="setTime" class="px-3 py-2 bg-white border border-pwc-border rounded-lg text-sm text-ink focus:outline-none focus:border-pwc-orange">
           </label>
           <label class="flex items-center gap-2">
             <span class="apple-caption text-muted">점심 시작</span>
-            <input type="number" id="setCutoff" min="0" max="1440" step="10" class="w-20 px-3 py-2 bg-pwc-canvas/60 border border-pwc-border rounded-lg text-sm text-ink focus:outline-none focus:border-pwc-orange">
+            <input type="number" id="setCutoff" min="0" max="1440" step="10" class="w-20 px-3 py-2 bg-white border border-pwc-border rounded-lg text-sm text-ink focus:outline-none focus:border-pwc-orange">
             <span class="apple-caption text-muted">분 전 마감</span>
           </label>
         </div>
@@ -1140,20 +1162,20 @@
           <p id="autoStatus" class="apple-fine-print text-muted pt-3"></p>
           <button onclick="saveSettings()" class="apple-press mt-2 px-5 py-2 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">설정 저장</button>
         </div>
-        <p class="apple-fine-print text-muted bg-pwc-canvas rounded-lg p-3">응답은 Supabase에 저장돼요. 자동 매칭은 서버가 매일 22시대(한국 시간)에 실행해요. 서버 실행 시각은 22시로 고정이라, 여기서 시각을 바꾸면 안내 문구만 바뀌어요.</p>
+        <p class="apple-fine-print text-muted bg-pwc-soft rounded-lg p-3">응답은 Supabase에 저장돼요. 자동 매칭은 서버가 매일 22시대(한국 시간)에 실행해요. 서버 실행 시각은 22시로 고정이라, 여기서 시각을 바꾸면 안내 문구만 바뀌어요.</p>
       </div>
 
       <div class="flex flex-wrap gap-2.5">
-        <button onclick="runMatching('manual')" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong shadow-sm transition">지금 매칭 실행</button>
-        <button onclick="addSampleData()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">샘플 30명 추가</button>
-        <button onclick="resetGroups()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">편성 결과 초기화</button>
-        <button onclick="clearData()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full border border-red-200 bg-white hover:bg-red-50 text-red-600 apple-caption font-semibold transition">응답 전체 삭제</button>
+        <button onclick="runMatching('manual')" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-full bg-ink hover:bg-[#24150D] text-white hk-btn apple-caption-strong transition">지금 매칭 실행</button>
+        <button onclick="addSampleData()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-2xl border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">샘플 30명 추가</button>
+        <button onclick="resetGroups()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-2xl border border-pwc-border bg-white hover:bg-pwc-soft text-ink apple-caption font-semibold transition">편성 결과 초기화</button>
+        <button onclick="clearData()" class="apple-press flex-1 min-w-[140px] py-3 px-4 rounded-2xl border border-red-200 bg-white hover:bg-red-50 text-red-600 apple-caption font-semibold transition">응답 전체 삭제</button>
       </div>
 
       <div class="bg-white rounded-2xl border border-pwc-border shadow-pwc overflow-hidden">
         <div class="p-4 border-b border-pwc-border space-y-3">
           <h3 class="apple-caption-strong text-ink">신청 현황 데이터 · 확인 코드 찾기</h3>
-          <input id="adminSearch" type="search" oninput="renderAdminTable()" placeholder="이름 또는 이메일로 검색 (예: 홍길동)" autocomplete="off" class="w-full px-4 py-2.5 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+          <input id="adminSearch" type="search" oninput="renderAdminTable()" placeholder="이름 또는 이메일로 검색 (예: 홍길동)" autocomplete="off" class="w-full px-4 py-2.5 bg-white border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
           <p class="apple-fine-print text-muted">코드를 잊은 신청자는 본인 확인(이름·이메일) 후 아래 코드를 알려 주세요.</p>
         </div>
         <div class="overflow-auto max-h-[420px]">
@@ -1167,7 +1189,8 @@
                 <th class="py-3 px-2.5 whitespace-nowrap">본부</th>
                 <th class="py-3 px-3 whitespace-nowrap">선택 슬롯</th>
                 <th class="py-3 px-2.5 whitespace-nowrap">인원</th>
-                <th class="py-3 px-3 whitespace-nowrap">우선 조건</th>
+                <th class="py-3 px-3 whitespace-nowrap">MBTI · 성별 · 출생</th>
+                <th class="py-3 px-3 whitespace-nowrap">원하는 조원</th>
               </tr>
             </thead>
             <tbody id="adminTableBody" class="divide-y divide-pwc-border/60 text-ink"></tbody>
@@ -1195,13 +1218,22 @@
     <div class="w-full max-w-sm bg-white rounded-2xl shadow-lg p-6 space-y-4">
       <h2 id="dialogTitle" class="apple-caption-strong text-ink text-base"></h2>
       <p id="dialogMsg" class="apple-caption text-muted"></p>
-      <input id="dialogEmail" type="email" autocomplete="username" placeholder="운영자 이메일" class="hidden w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
-      <input id="dialogInput" type="password" autocomplete="current-password" placeholder="비밀번호" class="hidden w-full px-4 py-3 bg-pwc-canvas/60 border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+      <input id="dialogEmail" type="email" autocomplete="username" placeholder="운영자 이메일" class="hidden w-full px-4 py-3 bg-white border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+      <input id="dialogInput" type="password" autocomplete="current-password" placeholder="비밀번호" class="hidden w-full px-4 py-3 bg-white border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
       <div class="flex gap-2 pt-1">
-        <button id="dialogCancel" type="button" class="apple-press flex-1 py-3 rounded-full border border-pwc-border bg-white hover:bg-pwc-soft apple-caption font-semibold text-ink transition">취소</button>
-        <button id="dialogOk" type="button" class="apple-press flex-1 py-3 rounded-full text-white apple-caption-strong transition"></button>
+        <button id="dialogCancel" type="button" class="apple-press flex-1 py-3 rounded-2xl border border-pwc-border bg-white hover:bg-pwc-soft apple-caption font-semibold text-ink transition">취소</button>
+        <button id="dialogOk" type="button" class="apple-press flex-1 py-3 rounded-2xl text-white apple-caption-strong transition"></button>
       </div>
     </div>
+  </div>
+
+  <!-- 신청 완료 연출용: 축하 입자 캔버스 + 달성 알림 -->
+  <canvas id="celebrateCanvas" aria-hidden="true"></canvas>
+  <div id="achieveToast" role="status" aria-live="polite">
+    <span class="badge" aria-hidden="true">
+      <svg width="30" height="30" viewBox="0 0 44 44"><path d="M22 4c3 0 5 2 7 5l9 16c3 6-1 13-8 13H14C7 38 3 31 6 25l9-16c2-3 4-5 7-5z" fill="#FFFFFF"/><rect x="13" y="27" width="18" height="11" rx="2" fill="#3B2418"/><circle cx="17.5" cy="21" r="1.8" fill="#3B2418"/><circle cx="26.5" cy="21" r="1.8" fill="#3B2418"/><path d="M20 23.5q2 2 4 0" fill="none" stroke="#3B2418" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </span>
+    <span><b>한끼 예약 완료!</b><span id="achieveSub">매일 22:00에 조를 짜 드려요</span></span>
   </div>
 
   <!-- 안내 토스트 -->
@@ -1212,14 +1244,7 @@
     // 날짜·시간표와 매칭 규칙은 matching.js 한 곳에서 관리 (서버 자동 매칭과 공유)
     const M = SamilMatching;
     const { timeSlots15Min, sid } = M;
-    const fullWeekDays = M.dayWindow();   // 오늘부터 2주 (한국 시간 기준, 접속할 때마다 새로 계산)
-    const INTERESTS = [
-      ['🏃‍♂️', '운동', ['헬스·러닝', '골프', '테니스·배드민턴', '등산', '기타 운동']],
-      ['🍽️', '먹거리', ['맛집 탐방', '카페·디저트', '요리·와인']],
-      ['🎬', '문화', ['영화·OTT', '독서', '전시·공연', '음악']],
-      ['✈️', '여가', ['국내여행', '해외여행', '게임', '프로야구 직관']],
-      ['📚', '자기계발', ['해외파견', '외국어', '재테크·부동산', '업무·커리어']]
-    ];
+    const fullWeekDays = M.dayWindow();   // 오늘부터 7일 (한국 시간 기준, 접속할 때마다 새로 계산)
     // 신청에 쓸 수 있는 이메일 도메인. 사내메일이 나오면 'pwc.com'을 추가하거나 이 목록만 바꾸면 됩니다.
     const EMAIL_DOMAINS = ['naver.com', 'gmail.com'];
     const MY_KEY = 'samil-hankki-v2-my';         // 이 기기에서 마지막으로 쓴 이메일·확인 코드
@@ -1239,16 +1264,14 @@
       const my = loadMy();
       const [myId, myDomain] = my ? my.email.split('@') : ['', ''];
       return {
-        name: '', emailId: myId || '', emailDomain: EMAIL_DOMAINS.includes(myDomain) ? myDomain : EMAIL_DOMAINS[0], birthYear: '', gender: '응답 안 함', dept: '', deptOpen: false,
-        slots: [], allergy: '', budget: '무관', foodCategories: [], spicy: '보통',
-        groupSizes: ['3~4명'], vibe: '둘 다 좋아요', interests: [], favoriteThing: '', priority: []
+        name: '', emailId: myId || '', emailDomain: EMAIL_DOMAINS.includes(myDomain) ? myDomain : EMAIL_DOMAINS[0], birthYear: '', gender: '', dept: '',
+        mbti: '', wantGenders: [], wantDepts: [], groupSizes: ['3~4명'], slots: []
       };
     }
     let formData = emptyForm();
     let responseList = [];               // 운영자 로그인 후에만 채워짐 (RLS)
     let matchState = defaultMatchState();
     let myGroup = null;                  // 내 결과 화면에서 마지막으로 불러온 내 조
-    let isEditingFromStep5 = false;
     let isAdmin = false;
     let matchBusy = false;
 
@@ -1263,18 +1286,14 @@
     function fromDbApp(r) {
       return {
         id: r.id, name: r.name, email: r.email, code: r.code, birthYear: r.birth_year, gender: r.gender,
-        dept: r.dept, deptOpen: r.dept_open, slots: r.slots || [], allergy: r.allergy, budget: r.budget,
-        foodCategories: r.food_categories || [], spicy: r.spicy, groupSizes: r.group_sizes || [], vibe: r.vibe,
-        interests: r.interests || [], favoriteThing: r.favorite_thing, priority: r.priority || [],
-        avoid: r.avoid || [], sample: r.sample, createdAt: r.created_at
+        dept: r.dept, mbti: r.mbti || '', wantGenders: r.want_genders || [], wantDepts: r.want_depts || [],
+        groupSizes: r.group_sizes || [], slots: r.slots || [], avoid: r.avoid || [], sample: r.sample, createdAt: r.created_at
       };
     }
     function toDbApp(f) {
       return {
         email: f.email, name: f.name, birth_year: String(f.birthYear || ''), gender: f.gender, dept: f.dept,
-        dept_open: !!f.deptOpen, slots: f.slots, allergy: f.allergy || '', budget: f.budget,
-        food_categories: f.foodCategories, spicy: f.spicy, group_sizes: f.groupSizes, vibe: f.vibe,
-        interests: f.interests, favorite_thing: f.favoriteThing || '', priority: f.priority
+        mbti: f.mbti, want_genders: f.wantGenders, want_depts: f.wantDepts, group_sizes: f.groupSizes, slots: f.slots
       };
     }
     function applySettings(s) {
@@ -1342,7 +1361,7 @@
       email.value = ''; email.classList.toggle('hidden', !login);
       field.value = ''; field.classList.toggle('hidden', !login);
       ok.innerText = okText;
-      ok.className = 'apple-press flex-1 py-3 rounded-full text-white apple-caption-strong transition ' + (danger ? 'bg-red-600 hover:bg-red-700' : 'bg-pwc-orange hover:bg-pwc-orange-hover');
+      ok.className = 'apple-press flex-1 py-3 rounded-2xl text-white apple-caption-strong transition ' + (danger ? 'bg-red-600 hover:bg-red-700' : 'bg-pwc-orange hover:bg-pwc-orange-hover');
       box.classList.remove('hidden');
       setTimeout(() => (login ? email : ok).focus(), 30);
       return new Promise(resolve => {
@@ -1374,15 +1393,6 @@
     }
 
     // ===== 화면 생성 =====
-    function buildInterestGroups() {
-      document.getElementById('interestGroups').innerHTML = INTERESTS.map(([emo, title, items]) => `
-        <div>
-          <span class="apple-fine-print font-semibold text-muted mb-1.5 flex items-center gap-1"><span>${emo}</span> ${title}</span>
-          <div class="flex flex-wrap gap-2">
-            ${items.map(v => `<button type="button" class="apple-press interest-pill px-3.5 py-1.5 rounded-full border border-pwc-border apple-caption text-ink bg-white hover:border-pwc-orange transition" data-val="${v}">${v}</button>`).join('')}
-          </div>
-        </div>`).join('');
-    }
     function populateBirthYears() {
       const select = document.getElementById('selectBirthYear');
       for (let y = 2005; y >= 1970; y--) {
@@ -1483,38 +1493,39 @@
     }
     function paintAll() {
       paintDept(); paintGrid();
-      const single = { '.budget-pill': 'budget', '.spicy-btn': 'spicy', '.vibe-btn': 'vibe' };
-      Object.entries(single).forEach(([sel, key]) => document.querySelectorAll(sel).forEach(b => highlightActiveBtn(b, formData[key] === b.dataset.val)));
-      const multi = { '.food-pill': 'foodCategories', '.group-size-multi-btn': 'groupSizes', '.priority-btn': 'priority', '.interest-pill': 'interests' };
+      document.querySelectorAll('.mbti-btn').forEach(b => highlightActiveBtn(b, formData.mbti === b.dataset.val));
+      const multi = { '.group-size-multi-btn': 'groupSizes', '.want-gender-btn': 'wantGenders', '.want-dept-btn': 'wantDepts' };
       Object.entries(multi).forEach(([sel, key]) => document.querySelectorAll(sel).forEach(b => highlightActiveBtn(b, formData[key].includes(b.dataset.val))));
-      document.getElementById('priorityCountBadge').innerText = formData.priority.length + '/2';
-      document.getElementById('interestCountBadge').innerText = formData.interests.length + '/3';
       document.getElementById('inputName').value = formData.name;
       document.getElementById('inputEmail').value = formData.emailId;
       document.getElementById('selectEmailDomain').value = formData.emailDomain;
-      document.getElementById('inputAllergy').value = formData.allergy;
-      document.getElementById('inputFavoriteThing').value = formData.favoriteThing;
       document.getElementById('selectBirthYear').value = formData.birthYear;
       document.getElementById('selectGender').value = formData.gender;
-      document.getElementById('checkDeptOpen').checked = formData.deptOpen;
       document.getElementById('checkFinalConsent').checked = false;
-      document.getElementById('submitBtn').disabled = true;
     }
 
     function setupInteractions() {
       document.querySelectorAll('.dept-seg-btn').forEach(btn => btn.addEventListener('click', () => { formData.dept = btn.dataset.val; paintDept(); }));
 
-      const single = { '.budget-pill': 'budget', '.spicy-btn': 'spicy', '.vibe-btn': 'vibe' };
-      Object.entries(single).forEach(([sel, key]) => document.querySelectorAll(sel).forEach(btn => btn.addEventListener('click', () => {
-        formData[key] = btn.dataset.val;
-        document.querySelectorAll(sel).forEach(b => highlightActiveBtn(b, b === btn));
-      })));
-
-      document.querySelectorAll('.food-pill').forEach(btn => btn.addEventListener('click', () => {
-        const v = btn.dataset.val;
-        formData.foodCategories = formData.foodCategories.includes(v) ? formData.foodCategories.filter(f => f !== v) : [...formData.foodCategories, v];
-        highlightActiveBtn(btn, formData.foodCategories.includes(v));
+      // MBTI: 하나만 선택
+      document.querySelectorAll('.mbti-btn').forEach(btn => btn.addEventListener('click', () => {
+        formData.mbti = btn.dataset.val;
+        document.querySelectorAll('.mbti-btn').forEach(b => highlightActiveBtn(b, b === btn));
+        seqNext(5);
       }));
+
+      // 원하는 조원 성별·부문: 여러 개 선택. "상관없음"을 고르면 나머지는 해제, 다른 걸 고르면 "상관없음" 해제
+      const bindWant = (sel, key, seq) => document.querySelectorAll(sel).forEach(btn => btn.addEventListener('click', () => {
+        const v = btn.dataset.val;
+        let list = formData[key];
+        if (list.includes(v)) list = list.filter(x => x !== v);
+        else list = v === '상관없음' ? ['상관없음'] : [...list.filter(x => x !== '상관없음'), v];
+        formData[key] = list;
+        document.querySelectorAll(sel).forEach(b => highlightActiveBtn(b, list.includes(b.dataset.val)));
+        if (list.length) { seqNext(seq); if (seq === 7) seqReveal(9, false); }
+      }));
+      bindWant('.want-gender-btn', 'wantGenders', 6);
+      bindWant('.want-dept-btn', 'wantDepts', 7);
 
       // 희망 인원: 중복 가능, 최소 1개는 남김
       document.querySelectorAll('.group-size-multi-btn').forEach(btn => btn.addEventListener('click', () => {
@@ -1526,10 +1537,6 @@
         highlightActiveBtn(btn, formData.groupSizes.includes(v));
       }));
 
-      bindLimitedMulti('.priority-btn', 'priority', 2, 'priorityCountBadge', '우선 조건은 최대 2개까지 고를 수 있어요.');
-      bindLimitedMulti('.interest-pill', 'interests', 3, 'interestCountBadge', '관심사는 최대 3개까지 고를 수 있어요.');
-
-      document.getElementById('checkFinalConsent').addEventListener('change', e => { document.getElementById('submitBtn').disabled = !e.target.checked; });
       document.getElementById('inputEmail').addEventListener('input', e => {
         // 전체 주소(abc@gmail.com)를 붙여 넣으면 앞부분만 남기고, 도메인이 목록에 있으면 자동 선택
         const v = e.target.value;
@@ -1541,27 +1548,13 @@
         }
       });
     }
-    function bindLimitedMulti(selector, key, max, badgeId, overMsg) {
-      document.querySelectorAll(selector).forEach(btn => btn.addEventListener('click', () => {
-        const v = btn.dataset.val;
-        let list = formData[key];
-        if (list.includes(v)) list = list.filter(x => x !== v);
-        else { if (list.length >= max) return showToast(overMsg); list = [...list, v]; }
-        formData[key] = list;
-        highlightActiveBtn(btn, list.includes(v));
-        document.getElementById(badgeId).innerText = list.length + '/' + max;
-      }));
-    }
 
     function readInputs() {
       formData.name = document.getElementById('inputName').value.trim();
       formData.emailId = document.getElementById('inputEmail').value.trim();
       formData.emailDomain = document.getElementById('selectEmailDomain').value || EMAIL_DOMAINS[0];
-      formData.allergy = document.getElementById('inputAllergy').value.trim();
-      formData.favoriteThing = document.getElementById('inputFavoriteThing').value.trim();
       formData.birthYear = document.getElementById('selectBirthYear').value;
       formData.gender = document.getElementById('selectGender').value;
-      formData.deptOpen = document.getElementById('checkDeptOpen').checked;
     }
 
     // ===== 단계 이동 =====
@@ -1569,11 +1562,17 @@
       readInputs();
       if (step === 1) {
         if (!formData.name) { flag('inputName'); return '이름을 입력해 주세요.'; }
+        if (!formData.birthYear) { flag('selectBirthYear'); return '출생연도를 골라 주세요.'; }
+        if (!formData.gender) { flag('selectGender'); return '성별을 골라 주세요.'; }
         if (!/^[A-Za-z0-9._-]+$/.test(formData.emailId)) { flag('emailBox'); return '이메일의 @ 앞부분을 영문·숫자로 입력해 주세요.'; }
         if (!formData.dept) return '소속 부문·본부를 골라 주세요.';
+        if (!formData.mbti) return 'MBTI를 골라 주세요.';
+        if (!formData.wantGenders.length) return '원하는 조원 성별을 골라 주세요.';
+        if (!formData.wantDepts.length) return '원하는 조원 부문을 골라 주세요.';
+        if (!formData.groupSizes.length) return '희망 인원을 골라 주세요.';
+        if (!document.getElementById('checkFinalConsent').checked) return '정보 사용·공유 동의에 체크해 주세요.';
       }
       if (step === 2 && formData.slots.length === 0) return '가능한 시간을 1칸 이상 골라 주세요.';
-      if (step === 4 && formData.interests.length === 0) return '관심사를 1개 이상 골라 주세요.';
       return '';
     }
     function flag(id) {
@@ -1583,17 +1582,10 @@
       setTimeout(() => el.classList.remove('!border-red-400'), 1800);
     }
     function handleNextStep(current) {
+      if (current === 1) seqRevealAll();
       const msg = validateStep(current);
       if (msg) return showToast(msg);
-      if (isEditingFromStep5) { isEditingFromStep5 = false; goToStep(5); }
-      else goToStep(current + 1);
-    }
-    function returnToSummary() {
-      const current = [1, 2, 3, 4].find(n => !document.getElementById('step' + n).classList.contains('hidden'));
-      const msg = current ? validateStep(current) : '';
-      if (msg) return showToast(msg);
-      isEditingFromStep5 = false;
-      goToStep(5);
+      goToStep(current + 1);
     }
 
     function goToStep(stepNumber) {
@@ -1602,39 +1594,23 @@
       document.querySelectorAll('.step-card').forEach(el => el.classList.add('hidden'));
       const target = document.getElementById('step' + stepNumber);
       if (target) target.classList.remove('hidden');
+      document.body.classList.toggle('landing-mode', stepNumber === 0);
+      if (stepNumber === 1) seqReset();
 
       const progress = document.getElementById('surveyProgressContainer');
-      const returnBtn = document.getElementById('returnToStep5Btn');
-
-      if (stepNumber >= 1 && stepNumber <= 5) {
+      if (stepNumber === 1 || stepNumber === 2) {
         progress.classList.remove('hidden');
-        returnBtn.classList.toggle('hidden', !(stepNumber < 5 && isEditingFromStep5));
         document.querySelectorAll('.prog-segment').forEach((seg, i) => {
-          seg.className = 'prog-segment h-1.5 flex-1 rounded-full transition-all duration-300 ' + (i < stepNumber ? 'bg-pwc-orange' : 'bg-hairline');
+          seg.className = 'prog-segment h-[3px] flex-1 rounded-full transition-all duration-300 ' + (i < stepNumber ? 'bg-pwc-orange' : 'bg-hairline');
         });
-        const titles = ['1 / 5단계 · 기본 정보', '2 / 5단계 · 가능한 일정 선택', '3 / 5단계 · 선호 조건 & 음식 취향', '4 / 5단계 · 이야기거리 & 우선순위', '5 / 5단계 · 최종 확인 및 제출'];
-        document.getElementById('stepIndicatorLabel').innerText = titles[stepNumber - 1];
-        if (stepNumber === 5) { isEditingFromStep5 = false; returnBtn.classList.add('hidden'); updateSummary(); }
+        document.getElementById('stepIndicatorLabel').innerText = ['1 / 2단계 · 기본 정보', '2 / 2단계 · 가능한 날짜·시간'][stepNumber - 1];
       } else {
         progress.classList.add('hidden');
         if (stepNumber === 6) renderAdmin();
         if (stepNumber === 7) prepareResultView();
       }
+      if (stepNumber === 0) refreshWaitingCount();
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-    function jumpToEdit(stepNumber) { isEditingFromStep5 = true; goToStep(stepNumber); }
-
-    // ===== 5단계 요약 =====
-    function updateSummary() {
-      const f = formData;
-      document.getElementById('sumNameContact').innerText =
-        `${f.name || '-'} / ${f.birthYear ? f.birthYear + '년생' : '미입력'} / ${f.gender} / ${f.emailId ? f.emailId + '@' + f.emailDomain : '-'}`;
-      document.getElementById('sumDept').innerText = `${f.dept || '-'} ${f.deptOpen ? '(조원에게 공개)' : '(비공개)'}`;
-      document.getElementById('sumSlots').innerText = f.slots.length ? `${f.slots.length}칸 · ${summarizeSlots(f.slots)}` : '선택 안 됨';
-      document.getElementById('sumFood').innerText = `${f.foodCategories.join(', ') || '전체'} · 맵기 ${f.spicy} · 알레르기 ${f.allergy || '없음'} · 예산 ${f.budget}`;
-      document.getElementById('sumGroupAndVibe').innerText = `${f.groupSizes.join(', ')} · ${f.vibe}`;
-      document.getElementById('sumInterests').innerText = `${f.interests.join(', ') || '-'} (요즘: ${f.favoriteThing || '미입력'})`;
-      document.getElementById('sumPriority').innerText = f.priority.length ? f.priority.map((p, i) => `${i + 1}. ${p}`).join('  ') : '지정 안 함';
     }
 
     // ===== 제출 =====
@@ -1646,10 +1622,9 @@
     }
     async function finishApplication() {
       readInputs();
-      if (!document.getElementById('checkFinalConsent').checked) return showToast('조원 공유 및 매칭 동의에 체크해 주세요.');
-      for (const s of [1, 2, 4]) {
+      for (const s of [1, 2]) {
         const msg = validateStep(s);
-        if (msg) { showToast(msg); return jumpToEdit(s); }
+        if (msg) { showToast(msg); if (s === 1) goToStep(1); return; }
       }
       const email = `${formData.emailId}@${formData.emailDomain}`.toLowerCase();
       // 같은 이메일로 다시 신청하면: 이 기기에 기억된 확인 코드가 맞을 때만 내용을 바꾸고(코드는 유지),
@@ -1675,12 +1650,9 @@
       saveMy(email, code);
 
       document.getElementById('confirmedEmail').innerText = email;
-      document.getElementById('confirmedCode').innerText = code;
       document.getElementById('completedTime').innerText = matchState.settings.time;
-      document.querySelectorAll('.step-card').forEach(el => el.classList.add('hidden'));
-      document.getElementById('surveyProgressContainer').classList.add('hidden');
-      document.getElementById('stepCompleted').classList.remove('hidden');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.getElementById('achieveSub').innerText = `매일 ${matchState.settings.time}에 조를 짜 드려요`;
+      playCompletion(code);
       sendCodeEmail(email, code);
     }
     // 확인 코드를 이메일로도 보내기 (서버 함수 api/send-code.js). 실패해도 신청은 이미 완료된 상태
@@ -1698,15 +1670,84 @@
         el.innerText = '이메일 발송에 실패했어요. 위 코드를 꼭 캡처해 두세요.';
       }
     }
+
+    // ===== 신청 완료 연출 =====
+    // 1) 5단계 요약 카드가 작아지며 사라지고  2) 그 자리에서 축하 입자가 터지고
+    // 3) 완료 화면 요소가 차례로 올라오며 코드 숫자가 굴러가다 멈추고  4) 위에서 달성 알림이 내려옴
+    function playCompletion(code) {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const card = document.querySelector('#step2 .tone-card');
+      const rect = card ? card.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0 };
+      const show = () => {
+        if (card) card.classList.remove('collapse-out');
+        document.querySelectorAll('.step-card').forEach(el => el.classList.add('hidden'));
+        document.getElementById('surveyProgressContainer').classList.add('hidden');
+        const done = document.getElementById('stepCompleted');
+        done.classList.remove('hidden', 'celebrate'); done.offsetHeight; done.classList.add('celebrate');
+        window.scrollTo({ top: 0 });
+        rollCode(code, reduce ? 0 : 900, reduce ? 0 : 300);
+        const toast = document.getElementById('achieveToast');
+        setTimeout(() => toast.classList.add('show'), reduce ? 0 : 700);
+        setTimeout(() => toast.classList.remove('show'), reduce ? 3500 : 4200);
+      };
+      if (reduce || !card) { show(); return; }
+      card.classList.add('collapse-out');
+      burstConfetti(rect.left + rect.width / 2, rect.top + Math.min(rect.height, innerHeight) / 2);
+      setTimeout(show, 480);
+    }
+    // 확인 코드 숫자가 슬롯처럼 굴러가다 한 자리씩 멈춤
+    function rollCode(code, duration, delay) {
+      const el = document.getElementById('confirmedCode');
+      if (!duration) { el.innerText = code; return; }
+      el.innerText = '------';
+      const start = performance.now() + delay;
+      const tick = now => {
+        const t = now - start;
+        if (t < 0) { requestAnimationFrame(tick); return; }
+        const fixed = Math.floor((t / duration) * code.length);   // 앞자리부터 하나씩 확정
+        el.innerText = code.split('').map((c, i) => i < fixed ? c : String(Math.floor(Math.random() * 10))).join('');
+        if (fixed < code.length) requestAnimationFrame(tick); else el.innerText = code;
+      };
+      requestAnimationFrame(tick);
+    }
+    // 축하 입자: 한 점에서 터진 뒤 천천히 떨어지며 사라짐
+    function burstConfetti(x, y) {
+      const cv = document.getElementById('celebrateCanvas');
+      const ctx = cv.getContext('2d');
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const colors = ['#D04A02', '#EB8C00', '#F6BC45', '#3B2418', '#F07C8C', '#E8662C', '#FFD5BC'];
+      const parts = Array.from({ length: 150 }, () => {
+        const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 9;
+        return { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4, s: 2 + Math.random() * 4.5, r: Math.random() * 6, vr: (Math.random() - .5) * .3,
+          c: colors[Math.floor(Math.random() * colors.length)], round: Math.random() < .45, life: 0, max: 140 + Math.random() * 90 };
+      });
+      const step = () => {
+        ctx.clearRect(0, 0, innerWidth, innerHeight);
+        let alive = 0;
+        parts.forEach(p => {
+          if (p.life++ > p.max) return;
+          alive++;
+          p.vx *= .97; p.vy = p.vy * .97 + .18; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+          ctx.globalAlpha = Math.max(0, 1 - p.life / p.max);
+          ctx.fillStyle = p.c;
+          ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+          if (p.round) { ctx.beginPath(); ctx.arc(0, 0, p.s * .6, 0, Math.PI * 2); ctx.fill(); }
+          else ctx.fillRect(-p.s / 2, -p.s * .35, p.s, p.s * .7);
+          ctx.restore();
+        });
+        ctx.globalAlpha = 1;
+        if (alive) requestAnimationFrame(step); else ctx.clearRect(0, 0, innerWidth, innerHeight);
+      };
+      requestAnimationFrame(step);
+    }
     function startNewApplication() {
       formData = emptyForm();
-      isEditingFromStep5 = false;
       paintAll();
       goToStep(1);
     }
     function goHome() {
       formData = emptyForm();
-      isEditingFromStep5 = false;
       paintAll();
       goToStep(0);
     }
@@ -1825,12 +1866,15 @@
       }
     }
     // deptCount: 내 결과 화면에서는 비공개 부문을 내려받지 않으므로 서버가 센 부문 수를 사용
-    function groupReasons(members, deptCount) {
-      const count = {};
-      members.forEach(m => (m.interests || []).forEach(i => count[i] = (count[i] || 0) + 1));
-      const tags = Object.entries(count).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, n]) => `${k} ${n}명`);
-      const depts = deptCount ?? new Set(members.map(m => m.dept)).size;
-      tags.push(depts > 1 ? `${depts}개 부문` : '같은 부문');
+    // 조 특징 태그: 부문 수, 성별 구성, MBTI 궁합 평균 (내 결과 화면·운영자 화면 공통)
+    function groupReasons(members) {
+      const tags = [];
+      const depts = new Set(members.map(m => m.dept).filter(Boolean)).size;
+      if (depts) tags.push(depts > 1 ? `${depts}개 부문` : '같은 부문');
+      const male = members.filter(m => m.gender === '남성').length, female = members.filter(m => m.gender === '여성').length;
+      if (male || female) tags.push(`남 ${male} · 여 ${female}`);
+      const avg = M.mbtiAverage(members.map(m => m.mbti));
+      if (avg !== null) tags.push(`MBTI 궁합 ${avg}점`);
       return tags;
     }
 
@@ -1900,7 +1944,7 @@
       document.getElementById('adminTableBody').innerHTML = rows.map(r => {
         const g = byGroup[sid(r.id)];
         return `
-        <tr class="hover:bg-pwc-canvas/60 transition">
+        <tr class="hover:bg-pwc-soft transition">
           <td class="py-3 px-3 font-semibold text-ink whitespace-nowrap">${esc(r.name)}</td>
           <td class="py-3 px-3 whitespace-nowrap ${g ? 'text-pwc-orange font-semibold' : 'text-muted'}">${g ? `${g.no}조 · ${responseOf(g, r.id) === 'yes' ? '참석' : (isConfirmed(g) ? '확정' : '응답 대기')}` : '대기'}</td>
           <td class="py-3 px-3 font-mono font-bold text-pwc-orange text-sm tracking-wider">${esc(r.code || '-')}</td>
@@ -1908,7 +1952,8 @@
           <td class="py-3 px-2.5 font-medium">${esc(r.dept)}</td>
           <td class="py-3 px-3 font-medium whitespace-nowrap">${esc(r.slots[0] || '-')}${r.slots.length > 1 ? ` 외 ${r.slots.length - 1}건` : ''}</td>
           <td class="py-3 px-2.5 whitespace-nowrap">${esc((r.groupSizes || []).join(', '))}</td>
-          <td class="py-3 px-3 whitespace-nowrap">${esc((r.priority || []).join(', ') || '-')}</td>
+          <td class="py-3 px-3 whitespace-nowrap">${esc([r.mbti || '-', r.gender || '-', r.birthYear ? r.birthYear + '년생' : '-'].join(' · '))}</td>
+          <td class="py-3 px-3 whitespace-nowrap">${esc([(r.wantGenders || []).join('/') || '-', (r.wantDepts || []).join('/') || '-'].join(' · '))}</td>
         </tr>`;
       }).join('');
       const empty = document.getElementById('emptyTableMsg');
@@ -1940,7 +1985,7 @@
           <ul class="apple-caption text-ink space-y-2 mb-3">
             ${members.map(m => `
               <li>
-                <div>${esc(m.name)} <span class="apple-fine-print font-semibold ${responseOf(g, m.id) === 'yes' ? 'text-pwc-orange' : 'text-muted'}">${responseOf(g, m.id) === 'yes' ? '참석✓' : '대기'}</span> <span class="text-muted apple-fine-print">${m.deptOpen ? esc(m.dept) : '부문 비공개'} · ${esc((m.interests || []).join(', '))}</span>
+                <div>${esc(m.name)} <span class="apple-fine-print font-semibold ${responseOf(g, m.id) === 'yes' ? 'text-pwc-orange' : 'text-muted'}">${responseOf(g, m.id) === 'yes' ? '참석✓' : '대기'}</span> <span class="text-muted apple-fine-print">${esc([m.dept, m.mbti, m.gender, m.birthYear ? String(m.birthYear).slice(2) + '년생' : ''].filter(Boolean).join(' · '))}</span>
                 ${m.slots.includes(g.slot) ? '' : '<span class="apple-fine-print text-red-600 font-semibold"> ⚠️ 고르지 않은 시간</span>'}</div>
                 <select class="${selectCls}" aria-label="${esc(m.name)} 이동" onchange="moveMember('${sid(m.id)}', this.value)">${groupOptions(g.id, m)}</select>
               </li>`).join('')}
@@ -2008,12 +2053,13 @@
           msg = `이번 매칭에서는 맞는 조를 찾지 못했어요. ${matchState.settings.autoOn ? `다음 매칭(${fmtDateTime(nextScheduled())})에서 자동으로 다시 찾아 드려요.` : '운영자가 다시 매칭하면 여기에 표시돼요.'}`;
         else msg = matchState.settings.autoOn ? `아직 매칭 전이에요. ${fmtDateTime(nextScheduled())}에 조를 짜 드려요.` : '아직 매칭 전이에요. 운영자가 매칭을 진행하면 여기에 표시돼요.';
         box.innerHTML = `
-          <div class="p-6 rounded-2xl border border-pwc-border bg-white shadow-pwc text-center space-y-3">
-            <div class="text-3xl">⏳</div>
+          <div class="p-6 rounded-2xl bg-pwc-soft text-center space-y-3">
             <p class="apple-caption-strong text-ink">${esc(me.name)}님, 매칭을 기다리고 있어요</p>
             <p class="apple-caption text-muted">${esc(msg)}</p>
-            ${openSlotsOf(me).length ? '' : '<button onclick="startNewApplication()" class="mt-1 px-5 py-2.5 rounded-full bg-pwc-orange text-white apple-caption-strong">다시 신청하기</button>'}
+            <p class="waiting-pill" data-waiting-wrap hidden><span class="waiting-dot" aria-hidden="true"></span><span data-waiting-count></span></p>
+            ${openSlotsOf(me).length ? '' : '<button onclick="startNewApplication()" class="mt-1 px-5 py-2.5 rounded-2xl bg-pwc-orange text-white apple-caption-strong">다시 신청하기</button>'}
           </div><div class="text-center pt-3"><button onclick="forgetMe()" class="apple-fine-print font-semibold text-muted hover:text-red-600 underline">이 기기에서 내 정보 지우기</button></div>`;
+        refreshWaitingCount();
         return;
       }
       const members = g.members;
@@ -2026,23 +2072,23 @@
             </div>
             <span class="shrink-0 px-2.5 py-1 rounded-full apple-fine-print font-semibold ${isConfirmed(g) ? 'bg-pwc-orange text-white' : 'bg-pwc-soft text-pwc-orange border border-pwc-border'}">${isConfirmed(g) ? '확정' : esc(statusLabel(g))}</span>
           </div>
-          <div class="flex flex-wrap gap-1">${groupReasons(members, g.deptCount).map(t => `<span class="px-2 py-0.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print text-ink">${esc(t)}</span>`).join('')}</div>
+          <div class="flex flex-wrap gap-1">${groupReasons(members).map(t => `<span class="px-2 py-0.5 rounded-full bg-pwc-soft border border-pwc-border apple-fine-print text-ink">${esc(t)}</span>`).join('')}</div>
           <ul class="divide-y divide-pwc-border/60">
             ${members.map(m => `
               <li class="py-3">
                 <div class="flex items-center justify-between gap-2">
-                  <div class="apple-caption-strong text-ink">${esc(m.name)}${sid(m.id) === sid(me.id) ? ' <span class="text-pwc-orange">(나)</span>' : ''} <span class="apple-fine-print text-muted font-normal">${m.deptOpen ? esc(m.dept) : ''}</span></div>
+                  <div class="apple-caption-strong text-ink">${esc(m.name)}${sid(m.id) === sid(me.id) ? ' <span class="text-pwc-orange">(나)</span>' : ''} <span class="apple-fine-print text-muted font-normal">${esc(m.dept || '')}</span></div>
                   ${responseOf(g, m.id) === 'yes' ? '<span class="shrink-0 apple-fine-print font-semibold text-pwc-orange">참석 ✓</span>' : `<span class="shrink-0 apple-fine-print text-muted">${isConfirmed(g) ? '참석' : '응답 대기'}</span>`}
                 </div>
                 <div class="apple-fine-print text-muted break-all">${esc(m.email)}</div>
-                <div class="apple-fine-print text-ink mt-1">${esc((m.interests || []).join(' · '))}${m.favoriteThing ? ` <span class="text-muted">/ 요즘: ${esc(m.favoriteThing)}</span>` : ''}</div>
+                <div class="apple-fine-print text-ink mt-1">${esc([m.mbti, m.gender, m.birthYear ? m.birthYear + '년생' : ''].filter(Boolean).join(' · '))}</div>
               </li>`).join('')}
           </ul>
           ${isDeadlinePassed(g) || g.locked ? '' : `
           <div class="pt-1 space-y-2">
             ${responseOf(g, me.id) === 'yes'
-              ? '<div class="w-full py-3 rounded-full bg-pwc-soft border border-pwc-border text-center apple-caption-strong text-pwc-orange">참석으로 응답했어요 ✓</div>'
-              : '<button onclick="respondAttend()" class="apple-press w-full py-3.5 rounded-full bg-pwc-orange hover:bg-pwc-orange-hover text-white apple-caption-strong transition">참석할게요</button>'}
+              ? '<div class="w-full py-3 rounded-2xl bg-pwc-soft text-center apple-caption-strong text-pwc-orange">참석으로 응답했어요 ✓</div>'
+              : '<button onclick="respondAttend()" class="apple-press w-full py-3.5 rounded-full bg-ink hover:bg-[#24150D] text-white hk-btn apple-caption-strong transition">참석할게요</button>'}
             <button onclick="respondPass()" class="w-full py-2.5 rounded-full apple-caption font-semibold text-muted hover:text-ink transition">${responseOf(g, me.id) === 'yes' ? '사정이 생겼어요, 이번 조는 패스할게요' : '이번 조는 패스할게요'}</button>
           </div>`}
           <p class="apple-fine-print text-muted">${isConfirmed(g)
@@ -2063,7 +2109,7 @@
       const { data, error } = await sb.rpc('respond_attend', { p_email: my.email, p_code: my.code });
       if (error || !data.ok) { showToast(respondFailMsg(data, error)); return lookupResult(true); }
       await lookupResult(true);
-      showToast(myGroup && isConfirmed(myGroup) ? '조원 모두 참석이에요. 조가 확정됐어요! 🎉' : '참석으로 응답했어요. 다른 조원의 응답을 기다리고 있어요.');
+      showToast(myGroup && isConfirmed(myGroup) ? '조원 모두 참석이에요. 조가 확정됐어요!' : '참석으로 응답했어요. 다른 조원의 응답을 기다리고 있어요.');
     }
     async function respondPass() {
       const my = loadMy(); if (!my || !myGroup) return;
@@ -2088,35 +2134,40 @@
     function updateLandingNote() {
       const st = matchState.settings;
       document.getElementById('landingNote').innerText = st.autoOn
-        ? `신청은 2분이면 끝나요. 매일 ${st.time}에 조를 짜 드려요.`
-        : '신청은 2분이면 끝나요. 결과는 "내 결과 확인하기"에서 볼 수 있어요.';
+        ? `신청은 1분이면 끝나요. 매일 ${st.time}에 조를 짜 드려요.`
+        : '신청은 1분이면 끝나요. 결과는 "내 결과 확인하기"에서 볼 수 있어요.';
+    }
+    // 실시간 매칭 대기 인원 (서버 함수 get_waiting_count: 아직 조가 없고 마감 전 시간을 고른 신청자 수)
+    async function refreshWaitingCount() {
+      const { data, error } = await sb.rpc('get_waiting_count');
+      document.querySelectorAll('[data-waiting-count]').forEach(el => {
+        el.textContent = error || data == null ? '' : `지금 매칭 대기 중 ${data}명`;
+        el.closest('[data-waiting-wrap]').hidden = !!error || data == null;
+      });
     }
 
     // ===== 샘플 30명 =====
     async function addSampleData() {
       const depts = ['Audit', 'Tax', 'Deal', 'AX'];
       const names = ['김회계', '이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저'];
-      const allInterests = INTERESTS.flatMap(g => g[2]);
-      const foods = ['한식', '일식', '중식', '아시안', '양식', '분식', '샐러드', '고기'];
       const sizeSets = [['3~4명'], ['3~4명', '5명~'], ['2명', '3~4명'], ['5명~'], ['2명']];
-      const pri = [['관심사'], ['다른 부문'], ['관심사', '다른 부문'], ['나이대'], ['음식 취향'], []];
+      const wantG = [['상관없음'], ['남성'], ['여성'], ['남성', '여성'], ['상관없음']];
+      const wantD = [['상관없음'], ['Audit', 'Tax'], ['Deal', 'AX'], ['상관없음'], ['Tax', 'Deal', 'AX']];
       const weekdays = fullWeekDays.filter(d => !/(토|일)/.test(d));
       const pick = (arr, k, seed) => { const out = []; let s = seed; while (out.length < k) { const v = arr[(s * 7919 + 13) % arr.length]; if (!out.includes(v)) out.push(v); s++; } return out; };
       const stamp = Date.now();
       const rows = [];
       for (let i = 1; i <= 30; i++) {
         // 평일 2~3일, 하루 안에서 연속된 3~4칸(45분~1시간)을 가능 시간으로
-        const days = pick(weekdays, 2 + (i % 2), i * 3);
+        const days = pick(weekdays, Math.min(weekdays.length, 2 + (i % 2)), i * 3);
         const start = i % 3;
         const slots = days.flatMap(d => timeSlots15Min.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`));
         const r = {
           name: names[i % names.length] + (Math.floor(i / names.length) + 1),
-          emailId: `sample${i}`, email: `sample${stamp % 10000}_${i}@example.com`,
-          birthYear: String(1990 + (i % 12)), gender: '응답 안 함', dept: depts[i % depts.length], deptOpen: i % 3 !== 0,
-          slots: sortSlots(slots), allergy: '', budget: ['무관', '1~1.5만원', '1만원 이하'][i % 3],
-          foodCategories: pick(foods, 2, i * 5), spicy: ['보통', '약하게', '맵게'][i % 3], groupSizes: sizeSets[i % sizeSets.length],
-          vibe: ['둘 다 좋아요', '차분하게 대화', '활기차게 대화'][i % 3], interests: pick(allInterests, 3, i * 11),
-          favoriteThing: '', priority: pri[i % pri.length]
+          email: `sample${stamp % 10000}_${i}@example.com`,
+          birthYear: String(1995 + (i % 9)), gender: i % 2 ? '남성' : '여성', dept: depts[i % depts.length],
+          mbti: M.MBTI_TYPES[(i * 7) % 16], wantGenders: wantG[i % wantG.length], wantDepts: wantD[i % wantD.length],
+          groupSizes: sizeSets[i % sizeSets.length], slots: sortSlots(slots)
         };
         rows.push({ ...toDbApp(r), code: genCode(rows), sample: true });
       }
@@ -2130,18 +2181,152 @@
       }
     }
 
+    // ===== 첫 화면 슬롯머신 (재미 요소: 실제 매칭과는 무관) =====
+    const ICON = p => `<svg viewBox="0 0 24 24" fill="none" stroke="#3B2418" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+    const SLOT_DEPTS = [
+      { name: '딜', bg: '#CFE3FA', icon: ICON('<rect x="3" y="7.5" width="18" height="12.5" rx="2.5"/><path d="M9 7.5V6a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 6v1.5"/><path d="M3 12.5h18"/>') },
+      { name: '감사', bg: '#FBE3A0', icon: ICON('<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>') },
+      { name: 'AX', bg: '#CDEFD9', icon: ICON('<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V5.5"/><circle cx="12" cy="4.3" r="1.2"/><circle cx="9.5" cy="13" r=".9" fill="#3B2418"/><circle cx="14.5" cy="13" r=".9" fill="#3B2418"/><path d="M3 12v3M21 12v3"/>') },
+      { name: '택스', bg: '#F8D0C4', icon: ICON('<path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21z"/><path d="M9 8h6M9 12h6M9 16h3"/>') }
+    ];
+    const SLOT_ITEM_H = 84;          // 칸 하나 높이(px) — CSS .hk-tile 높이와 같아야 함
+    const SLOT_STRIP_LEN = 80;       // 릴 하나에 붙인 칸 개수
+    const slotPos = [0, 1, 2, 3];    // 각 릴이 지금 멈춰 있는 부문 번호
+    let slotSpinning = false;
+    function initSlot() {
+      document.querySelectorAll('#slotMachine .hk-strip').forEach((strip, i) => {
+        strip.innerHTML = Array.from({ length: SLOT_STRIP_LEN }, (_, k) => {
+          const d = SLOT_DEPTS[k % 4];
+          return `<div class="hk-tile"><div class="hk-tile-in hk-display" style="background:${d.bg}">${d.icon}<span>${d.name}</span></div></div>`;
+        }).join('');
+        strip.style.transform = `translateY(${-slotPos[i] * SLOT_ITEM_H}px)`;
+      });
+      document.getElementById('slotLever').addEventListener('click', spinSlot);
+      document.getElementById('slotSpinBtn').addEventListener('click', spinSlot);
+      initReveal();
+    }
+    function spinSlot() {
+      if (slotSpinning) return;
+      slotSpinning = true;
+      const machine = document.getElementById('slotMachine');
+      document.getElementById('slotLever').disabled = true;
+      document.getElementById('slotSpinBtn').disabled = true;
+      machine.classList.remove('win', 'pulling');
+      machine.offsetHeight;                       // 애니메이션을 처음부터 다시 시작하도록
+      machine.classList.add('pulling', 'spinning');
+      document.getElementById('slotSign').innerText = '오늘의 한끼 테이블';
+      document.getElementById('slotResult').innerText = '두구두구… 테이블을 차리는 중!';
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const targets = [0, 1, 2, 3].map(() => Math.floor(Math.random() * 4));
+      const strips = [...machine.querySelectorAll('.hk-strip')];
+      let done = 0;
+      setTimeout(() => {                          // 레버가 내려간 뒤에 릴이 돌기 시작
+        strips.forEach((strip, i) => {
+          strip.style.transition = 'none';
+          strip.style.transform = `translateY(${-slotPos[i] * SLOT_ITEM_H}px)`;
+          strip.offsetHeight;
+          const stopIndex = (6 + i * 3) * 4 + targets[i];   // 여러 바퀴 돈 뒤 목표 부문에서 멈춤
+          const duration = reduce ? 0 : 1300 + i * 380;     // 오른쪽 릴일수록 늦게 멈춤
+          strip.style.transition = reduce ? 'none' : `transform ${duration}ms cubic-bezier(.15,.75,.25,1.04)`;
+          strip.style.transform = `translateY(${-stopIndex * SLOT_ITEM_H}px)`;
+          setTimeout(() => {
+            slotPos[i] = targets[i];
+            strip.style.transition = 'none';
+            strip.style.transform = `translateY(${-targets[i] * SLOT_ITEM_H}px)`;
+            if (++done === strips.length) finishSlot(targets);
+          }, duration + 30);
+        });
+      }, reduce ? 0 : 250);
+    }
+    function finishSlot(targets) {
+      const machine = document.getElementById('slotMachine');
+      const names = targets.map(t => SLOT_DEPTS[t].name);
+      const uniq = [...new Set(names)];
+      machine.classList.remove('spinning', 'pulling');
+      if (uniq.length === 1) { machine.classList.add('win'); document.getElementById('slotSign').innerText = '잭팟!'; }
+      document.getElementById('slotResult').innerText =
+        uniq.length === 1 ? `잭팟! ${uniq[0]} 동기 넷이 한 테이블에!` :
+        uniq.length === 4 ? '네 부문이 모두 모인 한 테이블!' :
+        `${uniq.join(' · ')} 동기들과 한 끼!`;
+      document.getElementById('slotLever').disabled = false;
+      document.getElementById('slotSpinBtn').disabled = false;
+      slotSpinning = false;
+    }
+    // 스크롤로 아래 섹션에 닿으면 차례로 나타남 (처음부터 화면에 보이는 부분은 그대로 둠)
+    function initReveal() {
+      const items = [...document.querySelectorAll('.hk-reveal')];
+      if (!('IntersectionObserver' in window)) return;
+      const io = new IntersectionObserver(entries => entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.remove('pre'); io.unobserve(e.target); }
+      }), { threshold: 0.18 });
+      items.forEach(el => {
+        if (el.getBoundingClientRect().top > window.innerHeight * 0.9) { el.classList.add('pre'); io.observe(el); }
+      });
+    }
+
+    // ===== 1단계: 입력을 마치면 다음 칸이 자동으로 나타나고 커서가 옮겨감 =====
+        const SEQ_COUNT = 10;   // 0 이름 → 1 출생연도 → 2 성별 → 3 이메일 → 4 부문 → 5 MBTI → 6 원하는 성별 → 7 원하는 부문 → 8 희망 인원 → 9 동의
+    let seqShown = 0;
+    function seqEl(i) { return document.querySelector(`#step1 .seq-field[data-seq="${i}"]`); }
+    function seqReveal(upTo, focus = true) {
+      upTo = Math.min(upTo, SEQ_COUNT - 1);
+      for (let i = 0; i <= upTo; i++) {
+        const el = seqEl(i);
+        if (el.classList.contains('seq-hidden')) { el.classList.remove('seq-hidden'); el.classList.add('seq-in'); }
+      }
+      seqShown = Math.max(seqShown, upTo);
+      document.querySelectorAll('#step1 .seq-skip').forEach(s => { s.hidden = Number(s.dataset.skip) < seqShown; }); // 지나간 칸의 '넘어가기'는 숨김
+      const el = seqEl(upTo);
+      if (!focus || !el) return;
+      setTimeout(() => {
+        const f = el.querySelector('input, select, button');
+        if (f && upTo < SEQ_COUNT - 1) f.focus({ preventScroll: true });
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 60);
+    }
+    function seqNext(i, focus = true) { if (i >= seqShown) seqReveal(i + 1, focus); }
+    function seqRevealAll() { seqReveal(SEQ_COUNT - 1, false); }
+    function seqReset() {
+      // 이미 입력한 적이 있으면(수정하러 돌아온 경우 등) 전부 보여 줌
+      if (formData.name) { seqRevealAll(); return; }
+      for (let i = 1; i < SEQ_COUNT; i++) seqEl(i).classList.add('seq-hidden');
+      seqShown = 0;
+    }
+    function setupSequence() {
+      const name = document.getElementById('inputName');
+      const email = document.getElementById('inputEmail');
+      const emailOk = () => /^[A-Za-z0-9._-]+$/.test(email.value.trim());
+      name.setAttribute('enterkeyhint', 'next');
+      email.setAttribute('enterkeyhint', 'next');
+      name.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (name.value.trim()) seqNext(0); }
+      });
+      name.addEventListener('blur', () => { if (name.value.trim()) seqNext(0, false); });
+      document.getElementById('selectBirthYear').addEventListener('change', () => seqNext(1));
+      document.getElementById('selectGender').addEventListener('change', () => seqNext(2));
+      document.querySelectorAll('#step1 .seq-skip').forEach(b => b.addEventListener('click', () => seqNext(Number(b.dataset.skip))));
+      email.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (emailOk()) seqNext(3); }
+      });
+      email.addEventListener('blur', () => { if (emailOk()) seqNext(3, false); });
+      document.getElementById('selectEmailDomain').addEventListener('change', () => { if (emailOk()) seqNext(3); });
+      document.querySelectorAll('.dept-seg-btn').forEach(b => b.addEventListener('click', () => seqNext(4)));
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       populateBirthYears();
       document.getElementById('selectEmailDomain').innerHTML = EMAIL_DOMAINS.map(d => `<option value="${d}">${d}</option>`).join('');
-      buildInterestGroups();
       renderWhenGrid();
       setupInteractions();
+      setupSequence();
       paintAll();
       updateLandingNote();
       loadSettings().then(updateLandingNote);   // Supabase에 저장된 매칭 시각으로 안내 문구 갱신
       document.getElementById('resultCode').addEventListener('keydown', e => { if (e.key === 'Enter') lookupResult(); });
       setInterval(checkAutoMatch, 20000); // 운영자 콘솔이 열려 있는 동안 20초마다 확인
+      setInterval(() => { if (document.visibilityState === 'visible') refreshWaitingCount(); }, 20000); // 매칭 대기 인원 실시간 갱신
       goToStep(0);
+      initSlot();
     });
   </script>
 </div>
