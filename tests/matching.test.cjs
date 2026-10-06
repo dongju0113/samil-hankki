@@ -21,15 +21,23 @@ ok(M.maskName('최동주') === '최*주' && M.maskName('김철') === '김*' && M
 // 점수: MBTI 50 + 성별 25 + 부문 25
 const a = person('a', [], { gender: '남성', dept: 'Audit', wantGenders: ['여성'], wantDepts: ['Tax'] })
 const b = person('b', [], { gender: '여성', dept: 'Tax', wantGenders: ['남성'], wantDepts: ['Audit'] })
-ok(M.pairScore(a, b) === 75, `서로 원하는 성별·부문 + MBTI 표 없음(50점의 절반) → 75점 (${M.pairScore(a, b)})`)
+ok(M.pairScore(a, b) === 43 + 50, `ENFP끼리 궁합 86점의 절반 43 + 서로 원하는 성별·부문 50 → 93점 (${M.pairScore(a, b)})`)
 const c = person('c', [], { gender: '남성', dept: 'Audit', wantGenders: ['남성'], wantDepts: ['Audit'] })
-ok(M.pairScore(a, c) === 25 + 12.5 + 12.5, `a는 c가 안 맞고 c는 a가 맞음 → 성별 12.5 + 부문 12.5 + MBTI 25 (${M.pairScore(a, c)})`)
-ok(M.pairScore(person('x', []), person('y', [])) === 75, '"상관없음"끼리는 성별·부문 만점')
-M.MBTI_TABLE.INFP = { ENFJ: 100 }
-ok(M.pairScore(person('x', [], { mbti: 'INFP' }), person('y', [], { mbti: 'ENFJ' })) === 100, 'MBTI 궁합표 반영 (INFP-ENFJ 100점 → MBTI 50점)')
-ok(M.mbtiScore('ENFJ', 'INFP') === 100, 'MBTI 궁합표는 순서 바꿔도 같음')
-delete M.MBTI_TABLE.INFP
-ok(M.mbtiAverage(['ENFP', 'INTJ', 'ISTJ']) === 50 && M.mbtiAverage(['ENFP']) === null, 'MBTI 평균 궁합')
+ok(M.pairScore(a, c) === 43 + 12.5 + 12.5, `a는 c가 안 맞고 c는 a가 맞음 → 성별 12.5 + 부문 12.5 + MBTI 43 (${M.pairScore(a, c)})`)
+ok(M.pairScore(person('x', []), person('y', [])) === 93, '"상관없음"끼리는 성별·부문 만점')
+ok(M.mbtiScore('INFP', 'ENTJ') === 100 && M.mbtiScore('ESFP', 'ISTJ') === 100 && M.mbtiScore('ESFP', 'ENFP') === 71, '팀 궁합표 반영 (INFP-ENTJ 100, ESFP-ENFP 71)')
+ok(M.pairScore(person('x', [], { mbti: 'INFP' }), person('y', [], { mbti: 'ENTJ' })) === 100, '최고 궁합 + 성별·부문 만점 → 100점')
+const T = M.MBTI_TYPES
+ok(T.every(x => T.every(y => M.mbtiScore(x, y) === M.mbtiScore(y, x))) && T.length === 16, '궁합표 16×16, 순서 바꿔도 같음')
+ok(M.mbtiAverage(['ENFP', 'INTJ', 'ISTJ']) === 85 && M.mbtiAverage(['ENFP']) === null, 'MBTI 평균 궁합 (100·85·71 → 85)')
+// MBTI가 갈리는 상황: 다른 조건이 같으면 궁합 높은 사람과 묶임
+let rr = M.computeMatching({ responses: [
+  person('me', ['10/9(금) 12:00'], { groupSizes: ['2명'], mbti: 'INFP' }),
+  person('lo', ['10/9(금) 12:00'], { groupSizes: ['2명'], mbti: 'ISFP' }),
+  person('hi', ['10/9(금) 12:00'], { groupSizes: ['2명'], mbti: 'ENTJ' }),
+  person('zz', ['10/9(금) 12:00'], { groupSizes: ['2명'], mbti: 'ISFP' })
+], groups: [], settings, now })
+ok(rr.newGroups.find(g => g.memberIds.includes('me')).memberIds.includes('hi'), 'MBTI 궁합 높은 사람(ENTJ)과 묶임')
 
 // 같은 칸을 고른 4명 → 한 조
 let r = M.computeMatching({ responses: ['a', 'b', 'c', 'd'].map(id => person(id, ['10/7(수) 12:00'])), groups: [], settings, now })
