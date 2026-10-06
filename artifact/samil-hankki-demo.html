@@ -930,7 +930,7 @@
           <label for="inputName" class="flex items-center gap-1.5 apple-caption-strong text-ink mb-2">
             이름 <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
           </label>
-          <input type="text" id="inputName" placeholder="예: 홍길동" autocomplete="name" class="w-full px-4 py-3 bg-white border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
+          <input type="text" id="inputName" placeholder="예: 홍길동" autocomplete="off" autocorrect="off" class="w-full px-4 py-3 bg-white border border-pwc-border rounded-xl text-ink text-sm focus:outline-none focus:border-pwc-orange focus:bg-white transition">
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2285,13 +2285,16 @@
       });
     }
 
-    // ===== 1단계: 입력을 마치면 다음 칸이 자동으로 나타나고 커서가 옮겨감 =====
-        const SEQ_COUNT = 10;   // 0 이름 → 1 출생연도 → 2 성별 → 3 이메일 → 4 부문 → 5 MBTI → 6 원하는 성별 → 7 원하는 부문 → 8 희망 인원 → 9 동의
+    // ===== 1단계: 하나를 입력하면 다음 질문이 나타남 =====
+    // 0 이름 → 1 출생연도 → 2 성별 → 3 이메일 → 4 부문 → 5 MBTI → 6 원하는 성별 → 7 원하는 부문 → 8 희망 인원 → 9 동의
+    // 휴대폰(터치): 커서를 자동으로 옮기지 않음. 키보드가 내려가 있을 때만 새 질문이 보이도록 살짝 스크롤
+    //  (삼성 키보드 등 안드로이드에서 커서 이동·스크롤이 한글 조합과 부딪혀 입력이 꼬이는 문제 방지)
+    // PC: 다음 칸으로 커서가 옮겨 가고 가운데로 스크롤
+    const SEQ_COUNT = 10;
     let seqShown = 0;
-    // 터치 화면(휴대폰·태블릿): 질문을 처음부터 모두 보여 주고 커서 강제 이동·자동 스크롤은 하지 않음
-    // (키보드가 올라온 상태에서 화면이 튀어 입력이 꼬이는 문제 방지). PC는 하나씩 나타나는 효과 유지
     const TOUCH = window.matchMedia('(pointer: coarse)').matches;
     function seqEl(i) { return document.querySelector(`#step1 .seq-field[data-seq="${i}"]`); }
+    const typingNow = () => { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && a.type !== 'checkbox'; };
     function seqReveal(upTo, focus = true) {
       upTo = Math.min(upTo, SEQ_COUNT - 1);
       for (let i = 0; i <= upTo; i++) {
@@ -2299,9 +2302,12 @@
         if (el.classList.contains('seq-hidden')) { el.classList.remove('seq-hidden'); el.classList.add('seq-in'); }
       }
       seqShown = Math.max(seqShown, upTo);
-      document.querySelectorAll('#step1 .seq-skip').forEach(s => { s.hidden = Number(s.dataset.skip) < seqShown; }); // 지나간 칸의 '넘어가기'는 숨김
       const el = seqEl(upTo);
-      if (!focus || !el || TOUCH) return;
+      if (!focus || !el) return;
+      if (TOUCH) {
+        if (!typingNow()) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+        return;
+      }
       setTimeout(() => {
         const f = el.querySelector('input, select, button');
         if (f && upTo < SEQ_COUNT - 1) f.focus({ preventScroll: true });
@@ -2312,7 +2318,7 @@
     function seqRevealAll() { seqReveal(SEQ_COUNT - 1, false); }
     function seqReset() {
       // 이미 입력한 적이 있으면(수정하러 돌아온 경우 등) 전부 보여 줌
-      if (formData.name || TOUCH) { seqRevealAll(); return; }
+      if (formData.name) { seqRevealAll(); return; }
       for (let i = 1; i < SEQ_COUNT; i++) seqEl(i).classList.add('seq-hidden');
       seqShown = 0;
     }
@@ -2322,22 +2328,26 @@
       const emailOk = () => /^[A-Za-z0-9._-]+$/.test(email.value.trim());
       name.setAttribute('enterkeyhint', 'next');
       email.setAttribute('enterkeyhint', 'next');
+      // 이름: 글자를 치기 시작하면 바로 다음 질문(출생연도)을 보여 줌. 입력 칸 자체는 건드리지 않음
+      name.addEventListener('input', () => { if (name.value.trim()) seqNext(0, false); });
+      name.addEventListener('blur', () => { if (name.value.trim()) seqNext(0, false); });
       name.addEventListener('keydown', e => {
         // 휴대폰은 Enter/다음 키를 가로채지 않음 (삼성 키보드는 한글 조합 중 Enter를 가로채면 글자가 사라지거나 꼬임)
         if (TOUCH) return;
         if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (name.value.trim()) seqNext(0); }
       });
-      name.addEventListener('blur', () => { if (name.value.trim()) seqNext(0, false); });
       document.getElementById('selectBirthYear').addEventListener('change', () => seqNext(1));
       document.getElementById('selectGender').addEventListener('change', () => seqNext(2));
-      document.querySelectorAll('#step1 .seq-skip').forEach(b => b.addEventListener('click', () => seqNext(Number(b.dataset.skip))));
+      // 이메일: 영문·숫자로 올바르게 쓰면 다음 질문(부문)을 보여 줌
+      email.addEventListener('input', () => { if (emailOk()) seqNext(3, false); });
+      email.addEventListener('blur', () => { if (emailOk()) seqNext(3, false); });
       email.addEventListener('keydown', e => {
         if (TOUCH) return;
         if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (emailOk()) seqNext(3); }
       });
-      email.addEventListener('blur', () => { if (emailOk()) seqNext(3, false); });
       document.getElementById('selectEmailDomain').addEventListener('change', () => { if (emailOk()) seqNext(3); });
       document.querySelectorAll('.dept-seg-btn').forEach(b => b.addEventListener('click', () => seqNext(4)));
+      // 희망 인원은 기본값(3~4명)이 있어서, 원하는 부문을 고르면 희망 인원과 동의를 함께 보여 줌 (setupInteractions)
     }
 
     window.addEventListener('DOMContentLoaded', () => {
