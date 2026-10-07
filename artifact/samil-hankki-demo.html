@@ -1901,11 +1901,19 @@
       el.innerText = '📧 확인 코드를 이메일로 보내는 중…';
       try {
         const res = await fetch('/api/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) });
-        if (!res.ok) throw new Error(res.status);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || res.status);
         el.innerText = `📧 ${email}로 코드를 보냈어요. 안 보이면 스팸함도 확인해 주세요.`;
       } catch (e) {
+        // 실패 이유별 안내 (괄호 안 짧은 이름은 운영자가 원인을 알 수 있게)
+        const why = {
+          gmail_login: '메일 계정 로그인 문제',
+          gmail_limit: '오늘 보낼 수 있는 메일 수 초과',
+          timeout: '메일 서버 응답 지연',
+          'mail not configured': '메일 설정 없음'
+        }[e.message] || '일시적인 문제';
         el.className = 'apple-fine-print text-red-600';
-        el.innerText = '이메일 발송에 실패했어요. 위 코드를 꼭 캡처해 두세요.';
+        el.innerText = `이메일 발송에 실패했어요 (${why} · ${e.message}). 위 코드를 꼭 캡처해 두세요. 결과는 [내 결과 확인하기]에서 볼 수 있어요.`;
       }
     }
 

@@ -86,8 +86,17 @@ async function handler(req, res, deps = {}) {
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ ok: false, error: 'send failed' });
+    return res.status(500).json({ ok: false, error: mailErrorKind(e) });
   }
+}
+
+// 발송 실패 이유 구분 (비밀번호 등은 담지 않음): Gmail 로그인 실패 / 하루 한도 초과 / 시간 초과 / 기타
+function mailErrorKind(e) {
+  const m = String((e && e.message) || '');
+  if (/\b535\b|BadCredentials|Username and Password|AUTH/i.test(m)) return 'gmail_login';
+  if (/5\.4\.5|daily|limit|\b421\b|\b454\b|\b550 5\.7\.1/i.test(m)) return 'gmail_limit';
+  if (/timeout/i.test(m)) return 'timeout';
+  return 'send_failed';
 }
 
 module.exports = (req, res) => handler(req, res);

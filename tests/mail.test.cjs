@@ -72,7 +72,7 @@ function call(body, deps, method = 'POST') {
 
   f = await fakeSmtp({ authOk: false })
   r = await call({ email: 'hong@naver.com', code: '123456' }, { verify: verifyOk, connect: () => net.connect(f.port) })
-  ok(r.code === 500 && r.body.error === 'send failed', 'Gmail 로그인 실패 → 500 (비밀번호 노출 없음)')
+  ok(r.code === 500 && r.body.error === 'gmail_login' && !JSON.stringify(r.body).includes('abcd'), 'Gmail 로그인 실패 → 500 gmail_login (비밀번호 노출 없음)')
   f.server.close()
 
   delete process.env.GMAIL_APP_PASSWORD
