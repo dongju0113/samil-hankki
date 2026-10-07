@@ -4,7 +4,7 @@
 // - 규칙은 supabase/01_schema.sql의 함수들과 같게 맞춤 (신청·내 결과·참석·패스·운영자 저장)
 (function (root) {
   const M = root.SamilMatching;
-  const KEY = 'samil-hankki-demo-v5';
+  const KEY = 'samil-hankki-demo-v6';
   const DEMO_EMAIL = 'demo@example.com';
   const DEMO_CODE = '123456';
   const clone = x => JSON.parse(JSON.stringify(x));
@@ -24,7 +24,7 @@
       applications: [], groups: [], members: []
     };
     const days = M.dayWindow().slice(1).filter(d => !/(토|일)/.test(d)); // 내일부터 평일
-    const T = M.timeSlots15Min;
+    const T = M.timeSlots;
     const depts = ['Assurance', 'Tax', 'Deal', 'AX'];
     const names = ['이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저', '오회계', '서밸류', '문리스크'];
     const MB = M.MBTI_TYPES;
@@ -44,7 +44,7 @@
     // 체험용 신청자 + 이미 짜인 1조 (내 결과 화면을 바로 볼 수 있게)
     const firstSlot = `${days[0]} 12:00`;
     const me = add({ email: DEMO_EMAIL, code: DEMO_CODE, name: '김삼일', birth_year: '1999', gender: '여성', dept: 'Assurance', mbti: 'ENFJ',
-      want_genders: ['상관없음'], want_depts: ['Tax', 'Deal', 'AX'], slots: [firstSlot, `${days[0]} 12:15`], sample: false });
+      want_genders: ['상관없음'], want_depts: ['Tax', 'Deal', 'AX'], slots: [firstSlot, `${days[0]} 12:30`], sample: false });
     const mates = [
       add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', gender: '남성', dept: 'Tax', mbti: 'INFP', slots: [firstSlot] }),
       add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', gender: '여성', dept: 'Deal', mbti: 'ISTJ', slots: [firstSlot, `${days[1]} 12:00`] }),
@@ -63,7 +63,7 @@
         name: names[i % names.length] + (Math.floor(i / names.length) + 1), birth_year: String(1995 + (i % 9)),
         gender: i % 2 ? '남성' : '여성', dept: depts[i % depts.length], mbti: MB[(i * 7) % 16],
         want_genders: wantG[i % wantG.length], want_depts: wantD[i % wantD.length], group_sizes: sizeSets[i % sizeSets.length],
-        slots: ds.flatMap(d => T.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`))
+        slots: ds.flatMap(d => T.slice(start, start + 2 + (i % 2)).map(t => `${d} ${t}`))
       });
     }
     state = st;

@@ -2,7 +2,8 @@
 // 매칭 규칙을 바꾸려면 이 파일만 고치면 돼요.
 (function (root) {
   const DAYS_SHOWN = 7;               // 일정표: 오늘 포함 7일
-  const timeSlots15Min = ['11:30', '11:45', '12:00', '12:15', '12:30', '12:45', '13:00'];
+  // 점심 시작 시간 (30분 간격). 예전 15분 단위로 받은 신청(11:45 등)도 매칭에는 그대로 쓰임
+  const timeSlots = ['11:30', '12:00', '12:30', '13:00'];
   const EVENT_YEAR = 2026;           // 날짜 표기("10/7(수)")에 연도가 없어 이 연도로 계산. supabase/01_schema.sql의 _slot_ts와 같게 유지
   const KST_MS = 9 * 60 * 60000;     // 시간 계산은 항상 한국 시간 기준 (서버는 UTC로 돌기 때문)
 
@@ -248,7 +249,7 @@
   }
 
   root.SamilMatching = {
-    dayWindow, timeSlots15Min, EVENT_YEAR, sid, MBTI_TYPES, MBTI_TABLE, mbtiScore, mbtiAverage, maskName, pairScore,
+    dayWindow, timeSlots, EVENT_YEAR, sid, MBTI_TYPES, MBTI_TABLE, mbtiScore, mbtiAverage, maskName, pairScore,
     slotKeyOrder, slotDate, fmtDateTime, lastScheduledBefore, isSlotOpen, openSlotsOf, sizeOk, allowedSizes,
     groupDeadline, isDeadlinePassed, responseOf, yesCount, isConfirmed, isCancelled, releasedIds, computeMatching
   };

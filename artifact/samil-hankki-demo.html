@@ -17,7 +17,8 @@
 // 매칭 규칙을 바꾸려면 이 파일만 고치면 돼요.
 (function (root) {
   const DAYS_SHOWN = 7;               // 일정표: 오늘 포함 7일
-  const timeSlots15Min = ['11:30', '11:45', '12:00', '12:15', '12:30', '12:45', '13:00'];
+  // 점심 시작 시간 (30분 간격). 예전 15분 단위로 받은 신청(11:45 등)도 매칭에는 그대로 쓰임
+  const timeSlots = ['11:30', '12:00', '12:30', '13:00'];
   const EVENT_YEAR = 2026;           // 날짜 표기("10/7(수)")에 연도가 없어 이 연도로 계산. supabase/01_schema.sql의 _slot_ts와 같게 유지
   const KST_MS = 9 * 60 * 60000;     // 시간 계산은 항상 한국 시간 기준 (서버는 UTC로 돌기 때문)
 
@@ -263,7 +264,7 @@
   }
 
   root.SamilMatching = {
-    dayWindow, timeSlots15Min, EVENT_YEAR, sid, MBTI_TYPES, MBTI_TABLE, mbtiScore, mbtiAverage, maskName, pairScore,
+    dayWindow, timeSlots, EVENT_YEAR, sid, MBTI_TYPES, MBTI_TABLE, mbtiScore, mbtiAverage, maskName, pairScore,
     slotKeyOrder, slotDate, fmtDateTime, lastScheduledBefore, isSlotOpen, openSlotsOf, sizeOk, allowedSizes,
     groupDeadline, isDeadlinePassed, responseOf, yesCount, isConfirmed, isCancelled, releasedIds, computeMatching
   };
@@ -278,7 +279,7 @@
 // - 규칙은 supabase/01_schema.sql의 함수들과 같게 맞춤 (신청·내 결과·참석·패스·운영자 저장)
 (function (root) {
   const M = root.SamilMatching;
-  const KEY = 'samil-hankki-demo-v5';
+  const KEY = 'samil-hankki-demo-v6';
   const DEMO_EMAIL = 'demo@example.com';
   const DEMO_CODE = '123456';
   const clone = x => JSON.parse(JSON.stringify(x));
@@ -298,7 +299,7 @@
       applications: [], groups: [], members: []
     };
     const days = M.dayWindow().slice(1).filter(d => !/(토|일)/.test(d)); // 내일부터 평일
-    const T = M.timeSlots15Min;
+    const T = M.timeSlots;
     const depts = ['Assurance', 'Tax', 'Deal', 'AX'];
     const names = ['이세무', '박재무', '최디지털', '정감사', '강어드바이저', '윤컨설팅', '한동기', '조시니어', '임매니저', '오회계', '서밸류', '문리스크'];
     const MB = M.MBTI_TYPES;
@@ -318,7 +319,7 @@
     // 체험용 신청자 + 이미 짜인 1조 (내 결과 화면을 바로 볼 수 있게)
     const firstSlot = `${days[0]} 12:00`;
     const me = add({ email: DEMO_EMAIL, code: DEMO_CODE, name: '김삼일', birth_year: '1999', gender: '여성', dept: 'Assurance', mbti: 'ENFJ',
-      want_genders: ['상관없음'], want_depts: ['Tax', 'Deal', 'AX'], slots: [firstSlot, `${days[0]} 12:15`], sample: false });
+      want_genders: ['상관없음'], want_depts: ['Tax', 'Deal', 'AX'], slots: [firstSlot, `${days[0]} 12:30`], sample: false });
     const mates = [
       add({ email: 'mate1@example.com', code: '482913', name: '이세무', birth_year: '1998', gender: '남성', dept: 'Tax', mbti: 'INFP', slots: [firstSlot] }),
       add({ email: 'mate2@example.com', code: '730145', name: '박재무', birth_year: '2000', gender: '여성', dept: 'Deal', mbti: 'ISTJ', slots: [firstSlot, `${days[1]} 12:00`] }),
@@ -337,7 +338,7 @@
         name: names[i % names.length] + (Math.floor(i / names.length) + 1), birth_year: String(1995 + (i % 9)),
         gender: i % 2 ? '남성' : '여성', dept: depts[i % depts.length], mbti: MB[(i * 7) % 16],
         want_genders: wantG[i % wantG.length], want_depts: wantD[i % wantD.length], group_sizes: sizeSets[i % sizeSets.length],
-        slots: ds.flatMap(d => T.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`))
+        slots: ds.flatMap(d => T.slice(start, start + 2 + (i % 2)).map(t => `${d} ${t}`))
       });
     }
     state = st;
@@ -1225,10 +1226,10 @@
         <div>
           <div class="flex items-center justify-between mb-1 gap-2">
             <label class="flex items-center gap-1.5 apple-caption-strong text-ink">
-              가능한 날짜 & 시간 선택
+              가능한 날짜 & 점심 시작 시간
               <span class="px-1.5 py-0.5 apple-fine-print font-semibold bg-pwc-soft text-pwc-orange rounded-md border border-pwc-border">필수</span>
             </label>
-            <span id="selectedSlotsCount" class="text-xs font-semibold text-pwc-orange whitespace-nowrap">0개 슬롯 선택됨</span>
+            <span id="selectedSlotsCount" class="text-xs font-semibold text-pwc-orange whitespace-nowrap">0개 시간 선택됨</span>
           </div>
           <div class="mb-3"></div>
 
@@ -1237,7 +1238,7 @@
               <table id="whenTable" class="w-full text-center text-xs border-collapse">
                 <thead class="sticky top-0 bg-pwc-soft z-20">
                   <tr id="whenHeadRow" class="text-muted font-semibold border-b border-pwc-border shadow-sm">
-                    <th class="py-2.5 px-2 text-left pl-3 w-16 bg-pwc-soft sticky left-0 z-30">시간</th>
+                    <th class="py-2.5 px-2 text-left pl-3 w-16 bg-pwc-soft sticky left-0 z-30 leading-tight">시작<br>시간</th>
                   </tr>
                 </thead>
                 <tbody id="whenGridBody" class="divide-y divide-pwc-border/60"></tbody>
@@ -1443,7 +1444,7 @@
     // ===== 설정값 =====
     // 날짜·시간표와 매칭 규칙은 matching.js 한 곳에서 관리 (서버 자동 매칭과 공유)
     const M = SamilMatching;
-    const { timeSlots15Min, sid } = M;
+    const { timeSlots, sid } = M;
     const fullWeekDays = M.dayWindow();   // 오늘부터 7일 (한국 시간 기준, 접속할 때마다 새로 계산)
     // 신청에 쓸 수 있는 이메일 도메인. 사내메일이 나오면 'pwc.com'을 추가하거나 이 목록만 바꾸면 됩니다.
     const EMAIL_DOMAINS = ['naver.com', 'gmail.com'];
@@ -1616,7 +1617,7 @@
         head.appendChild(th);
       });
       const tbody = document.getElementById('whenGridBody');
-      tbody.innerHTML = timeSlots15Min.map(time => `
+      tbody.innerHTML = timeSlots.map(time => `
         <tr>
           <td class="py-2 px-2 bg-pwc-soft text-left pl-3 text-muted font-semibold text-[11px] select-none sticky left-0 z-10">${time}</td>
           ${fullWeekDays.map(date => `<td class="p-0.5"><div role="button" tabindex="0" aria-pressed="false" aria-label="${date} ${time}" class="${CELL_OFF}" data-slot="${date} ${time}">-</div></td>`).join('')}
@@ -1669,7 +1670,7 @@
       cell.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     function paintGrid() { document.querySelectorAll('.slot-cell').forEach(paintCell); updateSlotCount(); }
-    function updateSlotCount() { document.getElementById('selectedSlotsCount').innerText = `${formData.slots.length}개 슬롯 선택됨`; }
+    function updateSlotCount() { document.getElementById('selectedSlotsCount').innerText = `${formData.slots.length}개 시간 선택됨`; }
     function clearSlots() { formData.slots = []; paintGrid(); }
 
     // ===== 버튼 선택 상태 =====
@@ -2384,7 +2385,7 @@
         mbti, mbtiParts: mbti.length === 4 ? mbti.split('') : ['', '', '', ''],
         wantGenders: me.wantGenders || [], wantDepts: me.wantDepts || [],
         groupSizes: (me.groupSizes && me.groupSizes.length ? me.groupSizes : ['3~4명']).map(x => x === '5명~' ? '5~6명' : x),
-        slots: (me.slots || []).filter(sl => fullWeekDays.includes(sl.split(' ')[0]))
+        slots: (me.slots || []).filter(sl => fullWeekDays.includes(sl.split(' ')[0]) && timeSlots.includes(sl.split(' ')[1]))
       };
       if (domain && !EMAIL_DOMAINS.includes(domain)) document.getElementById('selectEmailDomain').insertAdjacentHTML('beforeend', `<option value="${esc(domain)}">${esc(domain)}</option>`);
       paintAll();
@@ -2453,7 +2454,7 @@
         // 평일 2~3일, 하루 안에서 연속된 3~4칸(45분~1시간)을 가능 시간으로
         const days = pick(weekdays, Math.min(weekdays.length, 2 + (i % 2)), i * 3);
         const start = i % 3;
-        const slots = days.flatMap(d => timeSlots15Min.slice(start, start + 3 + (i % 2)).map(t => `${d} ${t}`));
+        const slots = days.flatMap(d => timeSlots.slice(start, start + 2 + (i % 2)).map(t => `${d} ${t}`));
         const r = {
           name: names[i % names.length] + (Math.floor(i / names.length) + 1),
           email: `sample${stamp % 10000}_${i}@example.com`,
