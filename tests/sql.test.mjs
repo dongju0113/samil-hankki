@@ -30,7 +30,7 @@ const [{ id: adminId }] = await q(`select id from auth.users where email='admin@
 const [{ id: userId }] = await q(`select id from auth.users where email='notadmin@test.com'`)
 
 const form = (email, extra = {}) => JSON.stringify({ email, name: '홍길동', birth_year: '1998', gender: '남성', dept: 'Assurance', mbti: 'ENFP',
-  want_genders: ['상관없음'], want_depts: ['Tax', 'Deal'], slots: ['10/7(수) 12:00', '10/8(목) 12:00'], group_sizes: ['3~4명'], ...extra })
+  want_genders: ['상관없음'], want_depts: ['Tax', 'Deal'], slots: ['12/28(월) 12:00', '12/29(화) 12:00'], group_sizes: ['3~4명'], ...extra })
 const submit = (f, code = null) => r(`select public.submit_application($1::jsonb, $2) r`, [f, code])
 
 console.log('\n[신청자 anon]')
@@ -78,12 +78,12 @@ const apps = await q(`select id, email from public.applications order by email`)
 ok(apps.length === 3, '전체 신청 3건 조회')
 const id = e => apps.find(a => a.email === e).id
 const save = (groups, joins = []) => r(`select public.admin_save_matching($1::jsonb, $2::jsonb, '테스트', false) r`, [JSON.stringify(groups), JSON.stringify(joins)])
-ok((await save([{ slot: '10/7(수) 12:00', memberIds: [id('a@naver.com'), id('b@gmail.com')] }])) === 1, '매칭 저장 → 새 조 1개')
+ok((await save([{ slot: '12/28(월) 12:00', memberIds: [id('a@naver.com'), id('b@gmail.com')] }])) === 1, '매칭 저장 → 새 조 1개')
 const g = (await q(`select * from public.groups`))[0]
 await save([], [{ groupId: g.id, memberId: id('c@gmail.com') }])
 ok(g.no === 1 && (await q(`select next_no from public.settings`))[0].next_no === 2, '조 번호 1, next_no 2 (합류만 있으면 번호 안 늘어남)')
 ok((await q(`select array_agg(m.email order by gm.seq) e from public.group_members gm join public.applications m on m.id=gm.application_id`))[0].e.join() === 'a@naver.com,b@gmail.com,c@gmail.com', '조원 순서 유지 + 기존 조 합류')
-ok(!!(await tryq(`select public.admin_save_matching($1::jsonb, '[]', 'x', false)`, [JSON.stringify([{ slot: '10/8(목) 12:00', memberIds: [id('a@naver.com')] }])])).err, '이미 조가 있는 사람 중복 배정 차단')
+ok(!!(await tryq(`select public.admin_save_matching($1::jsonb, '[]', 'x', false)`, [JSON.stringify([{ slot: '12/29(화) 12:00', memberIds: [id('a@naver.com')] }])])).err, '이미 조가 있는 사람 중복 배정 차단')
 ok((await q(`update public.settings set include_past = true where id = 1 returning include_past`))[0].include_past === true, '설정 수정(테스트 모드 켬)')
 
 console.log('\n[신청자: 결과·참석·패스]')
@@ -128,8 +128,8 @@ ok((await r(`select public.get_my_result('b@gmail.com', $1) r`, [rB.code])).lock
 console.log('\n[운영자 이동/초기화]')
 await as('authenticated', adminId)
 await q(`select public.admin_clear(false)`)
-await save([{ slot: '10/8(목) 12:00', memberIds: [id('a@naver.com')] }])
-const gid = (await q(`select id from public.groups where slot='10/8(목) 12:00'`))[0].id
+await save([{ slot: '12/29(화) 12:00', memberIds: [id('a@naver.com')] }])
+const gid = (await q(`select id from public.groups where slot='12/29(화) 12:00'`))[0].id
 await q(`select public.admin_move_member($1, $2)`, [id('c@gmail.com'), gid])
 ok((await q(`select count(*)::int n from public.group_members where group_id=$1`, [gid]))[0].n === 2, '조원 이동(넣기)')
 await q(`select public.admin_move_member($1, null)`, [id('a@naver.com')]); await q(`select public.admin_move_member($1, null)`, [id('c@gmail.com')])
@@ -152,7 +152,7 @@ await as('anon')
 await submit(form('s@gmail.com'))
 await as('service_role', '', 'service_role')
 const sid2 = (await q(`select id from public.applications where email='s@gmail.com'`))[0].id
-ok((await r(`select public.admin_save_matching($1::jsonb, '[]', '자동 테스트', true) r`, [JSON.stringify([{ slot: '10/9(금) 12:00', memberIds: [sid2] }])])) === 1, 'service_role로 매칭 저장 가능')
+ok((await r(`select public.admin_save_matching($1::jsonb, '[]', '자동 테스트', true) r`, [JSON.stringify([{ slot: '12/30(수) 12:00', memberIds: [sid2] }])])) === 1, 'service_role로 매칭 저장 가능')
 ok((await q(`select last_auto_run_at is not null as v from public.settings`))[0].v, '자동 실행 시각 기록')
 await as('authenticated', userId, 'authenticated')
 ok(!!(await tryq(`select public.admin_save_matching('[]', '[]', 'x', true)`)).err, '운영자 아닌 계정은 여전히 거부')
@@ -174,7 +174,7 @@ const contactOf = async cgid => (await q(`select contact_id from public.groups w
 const firsts = new Set()
 for (let k = 0; k < 12; k++) {
   await q(`select public.admin_clear(false)`)
-  await q(`select public.admin_save_matching($1::jsonb, '[]', 'x', false)`, [JSON.stringify([{ slot: '10/9(금) 12:00', memberIds: ids.slice(0, 4) }])])
+  await q(`select public.admin_save_matching($1::jsonb, '[]', 'x', false)`, [JSON.stringify([{ slot: '12/30(수) 12:00', memberIds: ids.slice(0, 4) }])])
   firsts.add(await contactOf((await q(`select id from public.groups`))[0].id))
 }
 ok([...firsts].every(c => ids.slice(0, 4).includes(c)), '연락 담당은 항상 그 조의 조원')
@@ -212,5 +212,45 @@ const n2 = (await q(`select dept, want_depts from public.applications where emai
 ok(n2.dept === 'Assurance' && n2.want_depts.join() === 'Assurance,Deal', '…Audit은 Assurance로 바꿔 저장')
 await as('anon')
 ok((await submit(form('new3@gmail.com', { dept: '영업' }))).reason === 'invalid', '없는 부문은 거부')
+
+console.log('\n[08: 희망 인원 5~6명 · 내 정보 · 응답 마감 후 자동 취소]')
+await db.exec(`reset role; delete from public.groups where true; delete from public.applications where true;`)
+await db.exec(`reset role; insert into public.applications (email, code, name, group_sizes) values ('legacy@gmail.com', '111111', '예전', '{5명~,2명}');`)
+await db.exec(fs.readFileSync(new URL('08_feedback.sql', PROJ), 'utf8')); await db.exec(fs.readFileSync(new URL('08_feedback.sql', PROJ), 'utf8'))
+ok((await q(`select group_sizes from public.applications where email = 'legacy@gmail.com'`))[0].group_sizes.join() === '5~6명,2명', "08 실행(두 번 OK): 예전 '5명~' → '5~6명'")
+await as('anon')
+ok((await submit(form('s56@gmail.com', { group_sizes: ['5~6명'] }))).ok, '5~6명으로 신청 가능')
+ok((await submit(form('s5p@gmail.com', { group_sizes: ['5명~'] }))).ok, "예전 화면의 '5명~'도 신청 성공")
+await db.exec(`reset role;`)
+ok((await q(`select group_sizes from public.applications where email = 's5p@gmail.com'`))[0].group_sizes.join() === '5~6명', "…'5~6명'으로 저장")
+await as('anon')
+ok((await submit(form('s10@gmail.com', { group_sizes: ['10명'] }))).reason === 'invalid', '없는 인원은 거부')
+const pa = await submit(form('pa@gmail.com', { name: '가나', mbti: 'INTJ', want_depts: ['Tax'] }))
+const pb = await submit(form('pb@gmail.com', { name: '나다' }))
+const pc = await submit(form('pc@gmail.com', { name: '다라' }))
+const meInfo = (await r(`select public.get_my_result('pa@gmail.com', $1) r`, [pa.code])).me
+ok(meInfo.mbti === 'INTJ' && meInfo.birthYear === '1998' && meInfo.gender === '남성' && meInfo.dept === 'Assurance'
+  && meInfo.wantDepts.join() === 'Tax' && meInfo.groupSizes.join() === '3~4명' && meInfo.slots.length === 2, '내 결과에 내가 입력한 정보 전체 (정보 수정·확인 메일용)')
+await db.exec(`reset role;`)
+const pid = async e => (await q(`select id from public.applications where email = $1`, [e]))[0].id
+const [ida, idb, idc] = [await pid('pa@gmail.com'), await pid('pb@gmail.com'), await pid('pc@gmail.com')]
+// 이미 지난 10/1 12:00 조 (응답 마감 지남): 가나·나다 참석, 다라 미응답
+await as('authenticated', adminId)
+await q(`select public.admin_save_matching($1::jsonb, '[]', 'x', false)`, [JSON.stringify([{ slot: '10/1(목) 12:00', memberIds: [ida, idb, idc] }])])
+await db.exec(`reset role;`)
+await q(`update public.group_members set response = 'yes' where application_id in ($1, $2)`, [ida, idb])
+const rel = async id => (await q(`select public._is_released($1) v`, [id]))[0].v
+ok(!(await rel(ida)) && (await rel(idc)), '마감 후: 참석한 가나는 그대로, 미응답 다라는 자동 취소')
+await as('anon')
+ok((await r(`select public.get_waiting_count() r`)) >= 1, '자동 취소된 다라는 매칭 대기 인원에 포함')
+await as('authenticated', adminId)
+ok(!(await tryq(`select public.admin_save_matching($1::jsonb, '[]', 'x', false)`, [JSON.stringify([{ slot: '12/29(화) 12:00', memberIds: [idc, await pid('s56@gmail.com')] }])])).err, '자동 취소된 다라를 새 조에 넣을 수 있음')
+await db.exec(`reset role;`)
+ok((await q(`select count(*)::int n from public.group_members gm join public.groups g on g.id = gm.group_id where gm.application_id = $1 and g.slot = '12/29(화) 12:00'`, [idc]))[0].n === 1, '…다라는 새 조로 옮겨짐')
+ok((await q(`select count(*)::int n from public.group_members gm join public.groups g on g.id = gm.group_id where g.slot = '10/1(목) 12:00'`))[0].n === 2, '…예전 조에는 참석한 2명만 남음')
+await as('authenticated', adminId)
+ok(!!(await tryq(`select public.admin_save_matching($1::jsonb, '[]', 'x', false)`, [JSON.stringify([{ slot: '12/29(화) 12:00', memberIds: [ida, idb] }])])).err, '참석해서 확정된 사람은 다른 조에 중복 배정 안 됨')
+await as('anon')
+ok(!!(await tryq(`select public._is_released($1)`, [ida])).err, 'anon 내부 함수(_is_released) 실행 차단')
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

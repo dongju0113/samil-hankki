@@ -2,6 +2,33 @@
 // - 이메일 + 코드가 Supabase에서 맞을 때만 발송 (아무나 임의 주소로 메일을 못 보내게)
 // - Vercel 환경변수 필요: GMAIL_USER (samilhankki@gmail.com), GMAIL_APP_PASSWORD (Google 앱 비밀번호 16자리)
 const { canMail, buildMessage, openSession, mailConfig } = require('./_mail.js');
+require('../matching.js');
+const M = globalThis.SamilMatching;
+
+// 가능한 시간: "10/7(수) 12:00, 12:15 · 10/8(목) 11:30" 처럼 날짜별로 묶음
+function summarizeSlots(slots) {
+  const byDate = {};
+  [...(slots || [])].sort((a, b) => M.slotKeyOrder(a) - M.slotKeyOrder(b))
+    .forEach(s => { const [d, t] = s.split(' '); (byDate[d] = byDate[d] || []).push(t); });
+  return Object.entries(byDate).map(([d, ts]) => `${d} ${ts.join(', ')}`).join(' · ') || '-';
+}
+const list = xs => (xs && xs.length ? xs.join(', ') : '-');
+// 확인 메일에 넣는 "내가 입력한 정보"
+function infoLines(me, email) {
+  return [
+    '■ 내가 입력한 정보',
+    `  - 이름: ${me.name}`,
+    `  - 이메일: ${email}`,
+    `  - 출생연도: ${me.birthYear ? me.birthYear + '년생' : '-'}`,
+    `  - 성별: ${me.gender || '-'}`,
+    `  - 소속 부문: ${me.dept || '-'}`,
+    `  - MBTI: ${me.mbti || '-'}`,
+    `  - 원하는 조원 성별: ${list(me.wantGenders)}`,
+    `  - 원하는 조원 부문: ${list(me.wantDepts)}`,
+    `  - 희망 인원: ${list(me.groupSizes)}`,
+    `  - 가능한 시간: ${summarizeSlots(me.slots)}`
+  ];
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://lhanlpwjqrthrrpunryw.supabase.co';
 // 브라우저에 공개된 것과 같은 publishable key (코드 확인 함수만 호출)
@@ -42,8 +69,10 @@ async function handler(req, res, deps = {}) {
       '',
       `■ 결과 확인 코드: ${code}`,
       '',
-      '매일 밤 22시에 아직 조가 없는 신청자끼리 자동으로 조를 짜 드려요. 조가 정해지면 메일로도 알려 드려요.',
-      '결과는 아래 주소의 [내 결과 확인하기]에서 이메일과 위 코드를 넣으면 볼 수 있어요.',
+      ...infoLines(me, email),
+      '',
+      'AI 알고리즘이 잘 맞는 동료와 조를 짜 드려요. 조가 정해지면 메일로 알려 드려요.',
+      '결과 확인과 정보 수정은 아래 주소의 [내 결과 확인하기]에서 이메일과 위 코드를 넣으면 할 수 있어요.',
       appUrl,
       '',
       '같은 이메일로 다시 신청해도 코드는 그대로예요.',
@@ -63,3 +92,4 @@ async function handler(req, res, deps = {}) {
 
 module.exports = (req, res) => handler(req, res);
 module.exports.handler = handler;
+module.exports.infoLines = infoLines;

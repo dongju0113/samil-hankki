@@ -246,6 +246,8 @@ begin
   -- 부문 이름 변경(Audit → Assurance): 예전 화면에서 보낸 값도 새 이름으로 저장
   v_dept := case when v_dept = 'Audit' then 'Assurance' else v_dept end;
   v_want_d := array_replace(v_want_d, 'Audit', 'Assurance');
+  -- 희망 인원 '5명~'(예전 값) → '5~6명'
+  v_sizes := array_replace(v_sizes, '5명~', '5~6명');
 
   -- 기본 검증 (화면 검증과 같은 기준 + 비정상 요청 차단)
   if length(p_form::text) > 6000
@@ -257,7 +259,7 @@ begin
      or v_mbti !~ '^[EI][SN][TF][JP]$'
      or coalesce(array_length(v_slots, 1), 0) = 0
      or exists (select 1 from unnest(v_slots) s where s !~ '^\d+/\d+\(.\) \d{2}:\d{2}$')
-     or coalesce(array_length(v_sizes, 1), 0) = 0 or not (v_sizes <@ array['2명', '3~4명', '5명~'])
+     or coalesce(array_length(v_sizes, 1), 0) = 0 or not (v_sizes <@ array['2명', '3~4명', '5~6명'])
      or coalesce(array_length(v_want_g, 1), 0) = 0 or not (v_want_g <@ array['남성', '여성', '상관없음'])
      or coalesce(array_length(v_want_d, 1), 0) = 0 or not (v_want_d <@ array['Assurance', 'Tax', 'Deal', 'AX', '상관없음'])
   then
@@ -351,6 +353,9 @@ begin
   return jsonb_build_object(
     'ok', true,
     'me', jsonb_build_object('id', a.id, 'name', a.name, 'email', a.email,
+                             'birthYear', a.birth_year, 'gender', a.gender, 'dept', a.dept, 'mbti', a.mbti,
+                             'wantGenders', to_jsonb(a.want_genders), 'wantDepts', to_jsonb(a.want_depts),
+                             'groupSizes', to_jsonb(a.group_sizes),
                              'slots', to_jsonb(a.slots), 'createdAt', a.created_at),
     'group', case when g.id is null then null else jsonb_build_object(
                'id', g.id, 'no', g.no, 'slot', g.slot, 'locked', g.locked, 'contactId', g.contact_id, 'members', v_members) end
@@ -358,14 +363,26 @@ begin
 end;
 $$;
 
--- 실시간 매칭 대기 인원: 아직 조가 없고, 마감 전인 시간을 하나 이상 고른 신청자 수 (숫자만 공개)
+-- 응답 마감이 지난 조에서 풀려난 조원인지: 참석을 안 눌렀거나, 참석이 2명 미만이라 조가 취소됨 (운영자 강제 확정 조는 제외)
+create or replace function public._is_released(p_app uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.group_members gm join public.groups g on g.id = gm.group_id
+     where gm.application_id = p_app and not g.locked and public._deadline_passed(g.slot)
+       and (gm.response <> 'yes'
+            or (select count(*) from public.group_members x where x.group_id = g.id and x.response = 'yes') < 2));
+$$;
+
+-- 실시간 매칭 대기 인원: 아직 조가 없고(또는 마감 후 풀려났고), 마감 전인 시간을 하나 이상 고른 신청자 수 (숫자만 공개)
 create or replace function public.get_waiting_count()
 returns int
 language sql stable security definer set search_path = ''
 as $$
   select count(*)::int
     from public.applications a
-   where not exists (select 1 from public.group_members gm where gm.application_id = a.id)
+   where (not exists (select 1 from public.group_members gm where gm.application_id = a.id) or public._is_released(a.id))
      and exists (
        select 1 from unnest(a.slots) as s(slot), public.settings st
         where st.id = 1
@@ -469,6 +486,10 @@ begin
     insert into public.groups (no, slot) values (v_no, g->>'slot') returning id into v_gid;
     v_no := v_no + 1;
     v_new := v_new + 1;
+    -- 응답 마감이 지나 풀려난 사람은 예전 조에서 빼고 새 조에 넣음
+    delete from public.group_members gm
+     where gm.application_id in (select x::uuid from jsonb_array_elements_text(g->'memberIds') as x)
+       and public._is_released(gm.application_id);
     insert into public.group_members (group_id, application_id)
       select v_gid, t.x::uuid
         from jsonb_array_elements_text(g->'memberIds') with ordinality as t(x, i)
@@ -476,6 +497,8 @@ begin
   end loop;
 
   for j in select * from jsonb_array_elements(coalesce(p_joins, '[]'::jsonb)) loop
+    delete from public.group_members gm
+     where gm.application_id = (j->>'memberId')::uuid and public._is_released(gm.application_id);
     insert into public.group_members (group_id, application_id)
       values ((j->>'groupId')::uuid, (j->>'memberId')::uuid);
   end loop;
@@ -588,6 +611,7 @@ revoke execute on function
   public._txt_arr(jsonb),
   public._verify_applicant(text, text),
   public._mask_name(text),
+  public._is_released(uuid),
   public.get_waiting_count(),
   public.submit_application(jsonb, text),
   public.get_my_result(text, text),

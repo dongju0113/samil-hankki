@@ -4,7 +4,7 @@
 // - 규칙은 supabase/01_schema.sql의 함수들과 같게 맞춤 (신청·내 결과·참석·패스·운영자 저장)
 (function (root) {
   const M = root.SamilMatching;
-  const KEY = 'samil-hankki-demo-v4';
+  const KEY = 'samil-hankki-demo-v5';
   const DEMO_EMAIL = 'demo@example.com';
   const DEMO_CODE = '123456';
   const clone = x => JSON.parse(JSON.stringify(x));
@@ -30,7 +30,7 @@
     const MB = M.MBTI_TYPES;
     const wantG = [['상관없음'], ['남성'], ['여성'], ['남성', '여성']];
     const wantD = [['상관없음'], ['Assurance', 'Tax'], ['Deal', 'AX'], ['상관없음'], ['Tax', 'Deal', 'AX']];
-    const sizeSets = [['3~4명'], ['3~4명', '5명~'], ['2명', '3~4명'], ['3~4명']];
+    const sizeSets = [['3~4명'], ['3~4명', '5~6명'], ['2명', '3~4명'], ['3~4명']];
     const pick = (arr, k, s) => { const out = []; while (out.length < k) { const v = arr[(s * 7919 + 13) % arr.length]; if (!out.includes(v)) out.push(v); s++; } return out; };
     const add = (o) => {
       const row = Object.assign({
@@ -119,6 +119,12 @@
     if (!g.contact_id || !ms.some(m => m.application_id === g.contact_id))
       g.contact_id = ms.length ? ms[Math.floor(Math.random() * ms.length)].application_id : null;
   }
+  function isReleased(appId) {
+    const m = memberOf(appId), g = m && groupById(m.group_id);
+    if (!g) return false;
+    const gm = groupsForMatch().find(x => x.id === g.id);
+    return M.releasedIds(gm, settingsCamel()).includes(appId);
+  }
   function deadlinePassed(g) { return M.isDeadlinePassed({ slot: g.slot }, settingsCamel()); }
   function saveMatching(newGroups, joins, summary, auto) {
     let n = 0;
@@ -126,12 +132,14 @@
       const g = { id: uid(), no: state.settings.next_no++, slot: ng.slot, locked: false, created_at: nowIso() };
       state.groups.push(g); n++;
       ng.memberIds.forEach(id => {
+        if (isReleased(id)) removeMember(id);   // 응답 마감 후 풀려난 사람은 예전 조에서 빼고 새 조로
         if (memberOf(id)) throw new Error('이미 조가 있는 신청자예요.');
         state.members.push({ application_id: id, group_id: g.id, response: 'pending', added_at: nowIso(), seq: ++state.seq });
       });
       ensureContact(g.id);
     });
     (joins || []).forEach(j => {
+      if (isReleased(j.memberId)) removeMember(j.memberId);
       if (memberOf(j.memberId)) throw new Error('이미 조가 있는 신청자예요.');
       state.members.push({ application_id: j.memberId, group_id: j.groupId, response: 'pending', added_at: nowIso(), seq: ++state.seq });
     });
@@ -151,11 +159,14 @@
       const f = p_form || {};
       const email = String(f.email || '').trim().toLowerCase();
       const arr = x => Array.isArray(x) ? x : [];
-      const slots = arr(f.slots), sizes = arr(f.group_sizes), wg = arr(f.want_genders), wd = arr(f.want_depts);
+      const slots = arr(f.slots), wg = arr(f.want_genders);
+      const sizes = arr(f.group_sizes).map(x => x === '5명~' ? '5~6명' : x);
+      const wd = arr(f.want_depts).map(x => x === 'Audit' ? 'Assurance' : x);
+      if (f.dept === 'Audit') f.dept = 'Assurance';
       const within = (xs, ok) => xs.length > 0 && xs.every(x => ok.includes(x));
       if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$/.test(email) || !String(f.name || '').trim() || !/^(19|20)\d{2}$/.test(f.birth_year || '')
           || !['남성', '여성'].includes(f.gender) || !['Assurance', 'Tax', 'Deal', 'AX'].includes(f.dept) || !M.MBTI_TYPES.includes(f.mbti)
-          || !slots.length || !within(sizes, ['2명', '3~4명', '5명~']) || !within(wg, ['남성', '여성', '상관없음'])
+          || !slots.length || !within(sizes, ['2명', '3~4명', '5~6명']) || !within(wg, ['남성', '여성', '상관없음'])
           || !within(wd, ['Assurance', 'Tax', 'Deal', 'AX', '상관없음']))
         return { ok: false, reason: 'invalid' };
       const fields = {
@@ -186,7 +197,8 @@
           members: ms.map((x, i) => ({ id: apps[i].id, name: apps[i].id === a.id ? apps[i].name : M.maskName(apps[i].name), email: apps[i].email,
             dept: apps[i].dept, gender: apps[i].gender, birthYear: apps[i].birth_year, mbti: apps[i].mbti, response: x.response })) };
       }
-      return { ok: true, me: { id: a.id, name: a.name, email: a.email, slots: a.slots, createdAt: a.created_at }, group };
+      return { ok: true, me: { id: a.id, name: a.name, email: a.email, birthYear: a.birth_year, gender: a.gender, dept: a.dept, mbti: a.mbti,
+        wantGenders: a.want_genders, wantDepts: a.want_depts, groupSizes: a.group_sizes, slots: a.slots, createdAt: a.created_at }, group };
     },
     respond_attend({ p_email, p_code }) {
       const a = verify(p_email, p_code); if (!a) return { ok: false, reason: 'wrong' };
@@ -211,7 +223,7 @@
       return { ok: true };
     },
     get_waiting_count() {
-      const assigned = new Set(state.members.map(m => m.application_id));
+      const assigned = new Set(state.members.map(m => m.application_id).filter(id => !isReleased(id)));
       return state.applications.filter(a => !assigned.has(a.id) && M.openSlotsOf(a, settingsCamel()).length).length;
     },
     is_admin() { return !!session; },

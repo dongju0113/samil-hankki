@@ -92,49 +92,105 @@
   function isDeadlinePassed(g, settings, now = new Date()) { return !settings.includePast && now >= groupDeadline(g, settings); }
   function responseOf(g, id) { return (g.responses || {})[sid(id)] || 'pending'; }
   function yesCount(g) { return g.memberIds.filter(id => responseOf(g, id) === 'yes').length; }
-  // 확정: 운영자 강제 확정 / 전원 참석 / 마감이 지남(무응답은 참석으로 간주)
-  function isConfirmed(g, settings) {
-    return g.locked || (g.memberIds.length >= 2 && yesCount(g) === g.memberIds.length) || isDeadlinePassed(g, settings);
+  // 응답 마감까지 [참석할게요]를 누른 조원끼리만 만남 (누르지 않으면 자동 취소)
+  //  - 운영자 강제 확정: 조원 전체 확정
+  //  - 마감 전: 조원 모두 참석을 누르면 바로 확정
+  //  - 마감 후: 참석 2명 이상이면 그 사람들끼리 확정, 1명 이하면 조 취소
+  function isConfirmed(g, settings, now = new Date()) {
+    if (g.locked) return true;
+    if (isDeadlinePassed(g, settings, now)) return yesCount(g) >= 2;
+    return g.memberIds.length >= 2 && yesCount(g) === g.memberIds.length;
   }
+  function isCancelled(g, settings, now = new Date()) {
+    return !g.locked && isDeadlinePassed(g, settings, now) && yesCount(g) < 2;
+  }
+  // 마감이 지나 이 조에서 풀려난 사람 (참석을 안 누른 사람, 취소된 조의 전원) → 다시 매칭 대상
+  function releasedIds(g, settings, now = new Date()) {
+    if (g.locked || !isDeadlinePassed(g, settings, now)) return [];
+    return isCancelled(g, settings, now) ? g.memberIds.map(sid) : g.memberIds.filter(id => responseOf(g, id) !== 'yes').map(sid);
+  }
+
+  // ===== 희망 인원 =====
+  // 2명 / 3~4명 / 5~6명 (여러 개 선택 가능, 최대 6명). '5명~'은 예전에 받던 값
+  const MAX_GROUP = 6;
+  const SIZE_OPTIONS = { '2명': [2], '3~4명': [3, 4], '5~6명': [5, 6], '5명~': [5, 6] };
+  const SIZE_ORDER = [4, 3, 6, 5, 2];   // 여러 크기가 가능하면 이 순서로 시도
+  const SIZE_PENALTY = 25;              // 희망과 1명 차이 날 때마다 깎는 점수 (남은 사람을 묶을 때만 사용)
+  function allowedSizes(r) {
+    const set = new Set((r.groupSizes || []).flatMap(o => SIZE_OPTIONS[o] || []));
+    return set.size ? set : new Set([3, 4]);
+  }
+  function sizeOk(size, r) { return allowedSizes(r).has(size); }
+  function sizeGap(size, r) { return Math.min(...[...allowedSizes(r)].map(s => Math.abs(s - size))); }
 
   // ===== 매칭 점수 =====
   // 두 사람의 궁합 = MBTI 50점 + 성별 25점 + 부문 25점 (최대 100점)
   //  - MBTI: 궁합표 점수(0~100)의 절반
   //  - 성별: 내가 원하는 성별에 상대가 맞으면 12.5점 + 상대가 원하는 성별에 내가 맞으면 12.5점
   //  - 부문: 같은 방식 ("상관없음"을 고르면 누구든 맞는 것으로)
-  //  - 패스했던 조원: -1000점 (사실상 다시 안 묶임)
-  const SIZE_PENALTY = 25;   // 희망하지 않은 인원 규모의 조에 넣을 때 깎는 점수
-  function sizeOk(size, r) {
-    const g = r.groupSizes || [];
-    if (size <= 2) return g.includes('2명');
-    if (size <= 4) return g.includes('3~4명');
-    return g.includes('5명~');
-  }
-  function desiredSize(r) {
-    const g = r.groupSizes || [];
-    if (g.includes('3~4명')) return 4;
-    if (g.includes('5명~')) return 5;
-    return 2;
-  }
+  //  - 패스했던 조원과도 다시 만날 수 있음 (제한 없음)
   const wants = (list, v) => !list || !list.length || list.includes('상관없음') || list.includes(v);
   function pairScore(a, b) {
-    let s = mbtiScore(a.mbti, b.mbti) * 0.5
+    return mbtiScore(a.mbti, b.mbti) * 0.5
       + (wants(a.wantGenders, b.gender) ? 12.5 : 0) + (wants(b.wantGenders, a.gender) ? 12.5 : 0)
       + (wants(a.wantDepts, b.dept) ? 12.5 : 0) + (wants(b.wantDepts, a.dept) ? 12.5 : 0);
-    if ((a.avoid || []).includes(sid(b.id)) || (b.avoid || []).includes(sid(a.id))) s -= 1000; // 패스했던 조원은 피함
-    return s;
   }
   function groupScore(group, c) { return group.reduce((sum, m) => sum + pairScore(m, c), 0); }
+
+  // ===== 한 시간 칸 안에서 조 나누기 =====
+  // strict: 모든 조원의 희망 인원에 맞는 크기로만 묶음
+  // 완화(strict=false): 남은 사람끼리, 희망 인원에 가장 가까운 크기로 묶음
+  function splitPool(pool, strict) {
+    pool = [...pool];
+    const groups = [], left = [];
+    while (pool.length >= 2) {
+      const seed = pool.shift();   // 가능한 칸이 적은 사람 먼저
+      const sizes = strict
+        ? SIZE_ORDER.filter(s => sizeOk(s, seed) && s <= pool.length + 1)
+        : Array.from({ length: Math.min(pool.length + 1, MAX_GROUP) - 1 }, (_, i) => i + 2)
+            .sort((a, b) => sizeGap(a, seed) - sizeGap(b, seed) || b - a);
+      let made = null;
+      for (const size of sizes) {
+        const cands = strict ? pool.filter(c => sizeOk(size, c)) : [...pool];
+        if (cands.length < size - 1) continue;
+        const g = [seed];
+        while (g.length < size) {
+          const fit = c => groupScore(g, c) - (strict ? 0 : sizeGap(size, c) * SIZE_PENALTY);
+          cands.sort((a, b) => fit(b) - fit(a));
+          g.push(cands.shift());
+        }
+        made = g;
+        break;
+      }
+      if (made) {
+        groups.push(made);
+        made.slice(1).forEach(m => pool.splice(pool.indexOf(m), 1));
+      } else left.push(seed);
+    }
+    left.push(...pool);
+    // 남은 사람: 같은 칸에 만든 조 중, 한 명 늘어나도 모든 조원의 희망 인원에 맞는 곳에 합류
+    if (strict) {
+      for (const r of [...left]) {
+        const cand = groups
+          .filter(g => g.length < MAX_GROUP && [...g, r].every(m => sizeOk(g.length + 1, m)))
+          .sort((a, b) => groupScore(b, r) - groupScore(a, r))[0];
+        if (cand) { cand.push(r); left.splice(left.indexOf(r), 1); }
+      }
+    }
+    return groups;
+  }
 
   // ===== 매칭 실행: 아직 조가 없는 사람만 대상 (이미 편성된 조는 건드리지 않음) =====
   // responses: 신청 목록, groups: 기존 조 [{ id, slot, locked, memberIds, responses }]
   // 반환: 저장할 새 조 / 기존 조 합류 / 실행 요약. 입력값은 바꾸지 않음
+  // 순서: ① 희망 인원을 지켜서 새 조 → ② 희망 인원이 맞는 기존 조에 합류 → ③ 그래도 남은 사람끼리 희망에 가장 가깝게
   function computeMatching({ responses, groups, settings, now = new Date(), source = 'manual' }) {
     const byId = Object.fromEntries(responses.map(r => [sid(r.id), r]));
     const allGroups = groups.map(g => ({ ...g, memberIds: [...g.memberIds] }));
     const sizeBefore = Object.fromEntries(allGroups.map(g => [g.id, g.memberIds.length]));
     const membersOf = g => g.memberIds.map(id => byId[sid(id)]).filter(Boolean);
-    const assigned = new Set(allGroups.flatMap(g => g.memberIds.map(sid)));
+    const released = new Set(allGroups.flatMap(g => releasedIds(g, settings, now)));
+    const assigned = new Set(allGroups.flatMap(g => g.memberIds.map(sid)).filter(id => !released.has(id)));
     const unassigned = new Set(responses.filter(r => !assigned.has(sid(r.id))).map(r => sid(r.id)));
     const before = unassigned.size;
     const openOf = r => openSlotsOf(r, settings, now);
@@ -144,8 +200,7 @@
       .sort((a, b) => slotKeyOrder(a) - slotKeyOrder(b));
     const formed = [];
 
-    // 1차: 3명 이상 모이는 칸 → 2차: 2명 이상 모이는 칸
-    for (const minPool of [3, 2]) {
+    const formPass = strict => {
       const used = new Set();
       while (true) {
         let best = null, bestPool = [];
@@ -154,47 +209,32 @@
           const pool = [...unassigned].map(id => byId[id]).filter(r => openOf(r).includes(slot));
           if (pool.length > bestPool.length) { best = slot; bestPool = pool; }
         });
-        if (!best || bestPool.length < minPool) break;
+        if (!best || bestPool.length < 2) break;
         used.add(best);
-
-        const pool = bestPool.sort((a, b) => openOf(a).length - openOf(b).length); // 가능한 칸이 적은 사람 먼저
-        const slotGroups = [];
-        while (pool.length >= 2) {
-          const seed = pool.shift();
-          let size = Math.min(desiredSize(seed), pool.length + 1);
-          if (size < 3 && !sizeOk(2, seed)) {
-            if (slotGroups.length) { pool.unshift(seed); break; }
-            if (pool.length + 1 < 3) { pool.unshift(seed); break; }
-            size = 3;
-          }
-          const g = [seed];
-          while (g.length < size && pool.length) {
-            const fit = c => groupScore(g, c) + (sizeOk(size, c) ? 0 : -SIZE_PENALTY);
-            pool.sort((a, b) => fit(b) - fit(a));
-            g.push(pool.shift());
-          }
-          slotGroups.push(g);
-        }
-        pool.forEach(r => {
-          const cand = slotGroups.filter(g => g.length < 6 && g.length >= 2).sort((a, b) => groupScore(b, r) - groupScore(a, r))[0];
-          if (cand) cand.push(r);
+        const pool = bestPool.sort((a, b) => openOf(a).length - openOf(b).length);   // 가능한 칸이 적은 사람 먼저
+        splitPool(pool, strict).forEach(g => {
+          g.forEach(m => unassigned.delete(sid(m.id)));
+          formed.push({ slot: best, members: g });
         });
-        slotGroups.forEach(g => { g.forEach(m => unassigned.delete(sid(m.id))); formed.push({ slot: best, members: g }); });
       }
-    }
+    };
+
+    formPass(true);
+    // 기존 조에 합류: 마감 전·미확정 조 중 시간이 맞고, 한 명 늘어나도 모든 조원의 희망 인원에 맞는 곳
+    [...unassigned].forEach(id => {
+      const r = byId[id];
+      const cand = allGroups
+        .filter(g => !g.locked && !isDeadlinePassed(g, settings, now) && !isConfirmed(g, settings, now)
+          && g.memberIds.length >= 2 && g.memberIds.length < MAX_GROUP && openOf(r).includes(g.slot)
+          && [...membersOf(g), r].every(m => sizeOk(g.memberIds.length + 1, m)))
+        .sort((a, b) => groupScore(membersOf(b), r) - groupScore(membersOf(a), r))[0];
+      if (cand) { cand.memberIds.push(r.id); unassigned.delete(id); }
+    });
+    formPass(false);
 
     // 새로 만든 조 (번호는 저장할 때 이어서 발급)
     formed.sort((a, b) => slotKeyOrder(a.slot) - slotKeyOrder(b.slot)).forEach((f, i) => {
       allGroups.push({ id: 'new' + i, isNew: true, slot: f.slot, memberIds: f.members.map(m => m.id), locked: false, responses: {} });
-    });
-
-    // 그래도 남은 사람: 확정되지 않은 기존 조 중 시간이 맞고 자리가 있는 곳에 합류
-    [...unassigned].forEach(id => {
-      const r = byId[id];
-      const cand = allGroups
-        .filter(g => !isConfirmed(g, settings) && g.memberIds.length >= 2 && g.memberIds.length < 6 && openOf(r).includes(g.slot))
-        .sort((a, b) => groupScore(membersOf(b), r) - groupScore(membersOf(a), r))[0];
-      if (cand) { cand.memberIds.push(r.id); unassigned.delete(id); }
     });
 
     const matched = before - unassigned.size;
@@ -209,7 +249,7 @@
 
   root.SamilMatching = {
     dayWindow, timeSlots15Min, EVENT_YEAR, sid, MBTI_TYPES, MBTI_TABLE, mbtiScore, mbtiAverage, maskName, pairScore,
-    slotKeyOrder, slotDate, fmtDateTime, lastScheduledBefore, isSlotOpen, openSlotsOf,
-    groupDeadline, isDeadlinePassed, responseOf, yesCount, isConfirmed, computeMatching
+    slotKeyOrder, slotDate, fmtDateTime, lastScheduledBefore, isSlotOpen, openSlotsOf, sizeOk, allowedSizes,
+    groupDeadline, isDeadlinePassed, responseOf, yesCount, isConfirmed, isCancelled, releasedIds, computeMatching
   };
 })(typeof window !== 'undefined' ? window : globalThis);

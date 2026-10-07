@@ -73,14 +73,46 @@ r = M.computeMatching({ responses: [
 mine = r.newGroups.find(g => g.memberIds.includes('me'))
 ok(mine && mine.memberIds.includes('t1'), '원하는 부문(Tax) 반영 → Tax 조원과 묶임')
 
-// 패스했던 조원과는 다시 묶이지 않음 (8명이 4명씩 두 조로 나뉠 때)
-const eight = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(id => person(id, ['10/9(금) 12:00']))
-eight[0].avoid = ['b', 'c']
-r = M.computeMatching({ responses: eight, groups: [], settings, now })
-const withA = r.newGroups.find(g => g.memberIds.includes('a'))
-ok(withA && !withA.memberIds.includes('b') && !withA.memberIds.includes('c'), '패스했던 조원(b, c)과 다른 조')
+// 패스해도 같은 사람과 다시 만날 수 있음 (제한 없음)
+r = M.computeMatching({ responses: [person('a', ['10/9(금) 12:00'], { avoid: ['b'] }), person('b', ['10/9(금) 12:00'])], groups: [], settings, now })
+ok(r.newGroups.length === 1 && r.newGroups[0].memberIds.join() === 'a,b', '패스했던 조원과도 다시 묶일 수 있음')
 
-ok(/^수동 매칭 10\/5\(월\) 12:00 · /.test(r.summary), '요약 문구 한국 시간 표기: ' + r.summary)
+// ===== 희망 인원 =====
+const S1 = ['10/7(수) 12:00'], TWO = ['10/7(수) 12:00', '10/8(목) 12:00']
+const groupsOf = rr => rr.newGroups.map(g => g.memberIds.join('+'))
+r = M.computeMatching({ responses: [person('t1', S1), person('t2', S1)], groups: [], settings, now })
+ok(groupsOf(r).join() === 't1+t2', '시간 한 칸만 고른 2명(3~4명 희망)도 매칭됨 → 2명 조 (희망에 가장 가까운 크기)')
+r = M.computeMatching({ responses: [person('x', S1, { groupSizes: ['2명'] }), person('y', S1, { groupSizes: ['2명'] }), person('z', S1)], groups: [], settings, now })
+ok(groupsOf(r).join() === 'x+y', '2명 희망 2명 + 3~4명 희망 1명 → 2명 조만 (3명으로 늘리지 않음)')
+r = M.computeMatching({ responses: [person('me', S1), ...['a', 'b', 'c', 'd'].map(i => person(i, TWO))], groups: [], settings, now })
+ok(r.newGroups.every(g => g.memberIds.length <= 4), '모두 3~4명 희망이면 5명 조를 만들지 않음: ' + groupsOf(r).join(' | '))
+r = M.computeMatching({ responses: 'abcdefg'.split('').map(i => person(i, S1)), groups: [], settings, now })
+ok(groupsOf(r).map(x => x.split('+').length).sort().join() === '3,4', '3~4명 희망 7명 → 4명 + 3명')
+r = M.computeMatching({ responses: 'abcdef'.split('').map(i => person(i, S1, { groupSizes: ['5~6명'] })), groups: [], settings, now })
+ok(groupsOf(r).length === 1 && r.newGroups[0].memberIds.length === 6, '5~6명 희망 6명 → 6명 조')
+r = M.computeMatching({ responses: 'abcdefgh'.split('').map(i => person(i, S1, { groupSizes: ['5~6명'] })), groups: [], settings, now })
+ok(r.newGroups.every(g => g.memberIds.length <= 6), '한 조는 최대 6명')
+ok(M.sizeOk(6, person('o', [], { groupSizes: ['5명~'] })), "예전 값 '5명~'은 5~6명으로 처리")
+// 기존 조 합류: 한 명 늘어나도 모든 조원 희망에 맞을 때만
+const G2 = { id: 'G2', slot: '10/7(수) 12:00', locked: false, memberIds: ['p', 'q'], responses: {} }
+r = M.computeMatching({ responses: [person('p', S1, { groupSizes: ['2명'] }), person('q', S1, { groupSizes: ['2명'] }), person('n', S1)], groups: [G2], settings, now })
+ok(r.joins.length === 0, '2명 희망 조에는 세 번째 사람을 넣지 않음')
+r = M.computeMatching({ responses: [person('p', S1), person('q', S1), person('n', S1)], groups: [G2], settings, now })
+ok(r.joins.length === 1 && r.joins[0].memberId === 'n', '3~4명 희망 2명 조에는 합류 가능 → 3명')
+
+// ===== 응답 마감 규칙: [참석]을 누른 사람끼리만 =====
+const late = new Date('2026-10-07T02:30:00Z')   // 10/7 11:30 (12:00 조의 마감 11:00이 지남)
+const g4 = { id: 'G4', slot: '10/7(수) 12:00', locked: false, memberIds: ['a', 'b', 'c', 'd'], responses: { a: 'yes', b: 'yes' } }
+ok(!M.isConfirmed(g4, settings, now) && M.isConfirmed(g4, settings, late), '마감 전엔 미확정, 마감 후 참석 2명 → 확정')
+ok(M.releasedIds(g4, settings, late).join() === 'c,d', '마감 후 참석 안 누른 c, d는 자동 취소(다시 매칭 대상)')
+const g1y = { ...g4, responses: { a: 'yes' } }
+ok(M.isCancelled(g1y, settings, late) && M.releasedIds(g1y, settings, late).length === 4, '참석 1명뿐이면 조 취소 → 4명 모두 다시 매칭 대상')
+ok(M.releasedIds({ ...g1y, locked: true }, settings, late).length === 0, '운영자 강제 확정 조는 그대로')
+ok(M.releasedIds(g4, settings, now).length === 0, '마감 전에는 아무도 풀려나지 않음')
+r = M.computeMatching({ responses: ['a', 'b', 'c', 'd'].map(i => person(i, ['10/7(수) 12:00', '10/8(목) 12:00'])), groups: [g4], settings, now: late })
+ok(r.newGroups.length === 1 && r.newGroups[0].memberIds.sort().join() === 'c,d' && r.newGroups[0].slot === '10/8(목) 12:00', '자동 취소된 c, d는 다른 시간(10/8)에 다시 매칭')
+
+ok(/^수동 매칭 10\/7\(수\) 11:30 · 새 조 1개/.test(r.summary), '요약 문구 한국 시간 표기: ' + r.summary)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

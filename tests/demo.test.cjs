@@ -21,6 +21,7 @@ const { DEMO_EMAIL, DEMO_CODE } = win.SamilDemo
   ok(r.data.group.members.every(m => m.mbti && m.gender && m.birthYear && m.dept && m.email), '조원 정보: MBTI·성별·출생연도·부문·이메일')
   ok(typeof (await sb.rpc('get_waiting_count')).data === 'number', '매칭 대기 인원')
   ok(r.data.group.contactId === r.data.me.id, '체험 계정이 연락 담당으로 시작')
+  ok(r.data.me.mbti && r.data.me.birthYear && r.data.me.wantDepts && r.data.me.groupSizes, '내 결과에 내가 입력한 정보 전체 (정보 수정용)')
   ok((await sb.rpc('get_my_result', { p_email: DEMO_EMAIL, p_code: '000000' })).data.ok === false, '틀린 코드 거부')
   ok((await sb.from('applications').select('*')).error, '로그인 전에는 신청 목록 조회 불가 (RLS 흉내)')
 

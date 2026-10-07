@@ -42,7 +42,7 @@ function call(body, deps, method = 'POST') {
 ;(async () => {
   process.env.GMAIL_USER = 'samilhankki@gmail.com'
   process.env.GMAIL_APP_PASSWORD = 'abcd efgh ijkl mnop'
-  const verifyOk = async (e, c) => (c === '123456' ? { name: '홍길동', email: e } : null)
+  const verifyOk = async (e, c) => (c === '123456' ? { name: '홍길동', email: e, birthYear: '1999', gender: '남성', dept: 'Tax', mbti: 'ENFP', wantGenders: ['상관없음'], wantDepts: ['Assurance', 'Deal'], groupSizes: ['3~4명'], slots: ['10/8(목) 12:15', '10/8(목) 12:00', '10/7(수) 11:30'] } : null)
 
   let f = await fakeSmtp()
   let r = await call({ email: 'Hong@Naver.com', code: '123456' }, { verify: verifyOk, connect: () => net.connect(f.port) })
@@ -55,6 +55,8 @@ function call(body, deps, method = 'POST') {
   ok(Buffer.from(subj, 'base64').toString() === '[삼일한끼] 결과 확인 코드 123456', '한글 제목 정상')
   const text = Buffer.from(bodyB64.replace(/\r\n/g, ''), 'base64').toString()
   ok(text.includes('홍길동님') && text.includes('123456') && text.includes('https://samil-hankki261005.vercel.app'), '본문에 이름·코드·앱 주소')
+  ok(['■ 내가 입력한 정보', '이메일: hong@naver.com', '출생연도: 1999년생', '성별: 남성', '소속 부문: Tax', 'MBTI: ENFP', '원하는 조원 성별: 상관없음', '원하는 조원 부문: Assurance, Deal', '희망 인원: 3~4명', '가능한 시간: 10/7(수) 11:30 · 10/8(목) 12:00, 12:15'].every(x => text.includes(x)), '확인 메일에 내가 입력한 정보 전체 (시간은 날짜별로 정리)')
+  ok(!text.includes('22시'), '22시 표현 없음')
   f.server.close()
 
   f = await fakeSmtp()
