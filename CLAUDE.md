@@ -24,8 +24,8 @@
 ## 구조
 | 파일 | 역할 |
 |---|---|
-| `index.html` | 화면 전체 (신청 5단계, 내 결과, 운영자 콘솔) |
-| `matching.js` | 매칭 규칙·날짜 계산 (오늘부터 2주 일정표) |
+| `index.html` | 화면 전체 (시작 페이지, 신청 2단계, 신청 완료, 내 결과, 운영자 콘솔) |
+| `matching.js` | 매칭 규칙·날짜 계산 (오늘 포함 7일 × 점심 시작 4칸, 희망 인원, MBTI 궁합표, 응답 마감 규칙) |
 | `api/cron-match.js` | 매일 22시(KST) 자동 매칭. `vercel.json`의 cron `0 13 * * *`(UTC) |
 | `api/send-code.js` | 신청 완료 시 확인 코드 메일 발송 (samilhankki@gmail.com, Gmail SMTP) |
 | `api/notify-matched.js`, `api/_notify.js` | 매칭 메일: 새로 조가 정해진 사람에게 발송. 자동 매칭 직후·23시 추가 발송(cron `0 14 * * *`)·운영자 매칭/조원 이동 직후. `group_members.notified_at`으로 중복 방지 |
